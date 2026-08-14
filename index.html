@@ -1,0 +1,699 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orçamento Excellington - Método 50-30-20</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React & ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- Babel para JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    /* Ocultar barra de rolagem mas permitir rolagem */
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+
+    /* Estilização para garantir que o input de mês ocupe a largura ideal */
+    input[type="month"] {
+      width: 100%;
+      text-align: center;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased selection:bg-indigo-500 selection:text-white">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useMemo, useEffect } = React;
+
+    function App() {
+      // --- ESTADO ---
+      // Inicia com a lista de transações completamente zerada
+      const [transactions, setTransactions] = useState([]);
+
+      const [currentMonth, setCurrentMonth] = useState(
+        new Date().toISOString().slice(0, 7) // Formato YYYY-MM
+      );
+
+      // Controle dos Modais
+      const [isTxModalOpen, setIsTxModalOpen] = useState(false);
+      const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
+      const [isPixModalOpen, setIsPixModalOpen] = useState(false);
+      const [isMethodModalOpen, setIsMethodModalOpen] = useState(false);
+      const [editingTxId, setEditingTxId] = useState(null);
+      const [copiedPix, setCopiedPix] = useState(false);
+
+      // Controle do Lembrete de Doação Pix
+      const [interactionCount, setInteractionCount] = useState(0);
+
+      // Estado do Formulário
+      const [txType, setTxType] = useState('expense');
+      const [txCategory, setTxCategory] = useState('needs');
+      const [txDescription, setTxDescription] = useState('');
+      const [txAmount, setTxAmount] = useState('');
+      const [txDate, setTxDate] = useState(new Date().toISOString().slice(0, 10));
+
+      const pixKey = "16250510850";
+
+      // Re-renderizar ícones do Lucide
+      useEffect(() => {
+        if (window.lucide) {
+          window.lucide.createIcons();
+        }
+      });
+
+      // --- CÁLCULOS DO MÊS SELECIONADO ---
+      const monthlyTransactions = useMemo(() => {
+        return transactions.filter(t => t.date.startsWith(currentMonth));
+      }, [transactions, currentMonth]);
+
+      const stats = useMemo(() => {
+        let income = 0;
+        let needs = 0;
+        let wants = 0;
+        let future = 0;
+
+        monthlyTransactions.forEach(t => {
+          if (t.type === 'income') income += t.amount;
+          else if (t.category === 'needs') needs += t.amount;
+          else if (t.category === 'wants') wants += t.amount;
+          else if (t.category === 'future') future += t.amount;
+        });
+
+        const expenses = needs + wants + future;
+        const balance = income - expenses;
+
+        return {
+          income,
+          expenses,
+          balance,
+          needs,
+          wants,
+          future,
+          needsPct: income > 0 ? (needs / income) * 100 : 0,
+          wantsPct: income > 0 ? (wants / income) * 100 : 0,
+          futurePct: income > 0 ? (future / income) * 100 : 0,
+        };
+      }, [monthlyTransactions]);
+
+      // --- EFEITO: LEMBRETE PERIÓDICO DE DOAÇÃO ---
+      useEffect(() => {
+        if (interactionCount === 5) {
+          setTimeout(() => setIsPixModalOpen(true), 800);
+        }
+      }, [interactionCount]);
+
+      // --- MANIPULADORES DE EVENTOS ---
+      const handleOpenCreateModal = (type = 'expense') => {
+        setEditingTxId(null);
+        setTxType(type);
+        setTxCategory('needs');
+        setTxDescription('');
+        setTxAmount('');
+        setTxDate(new Date().toISOString().slice(0, 10));
+        setIsTxModalOpen(true);
+      };
+
+      const handleOpenEditModal = (tx) => {
+        setEditingTxId(tx.id);
+        setTxType(tx.type);
+        setTxCategory(tx.category);
+        setTxDescription(tx.description);
+        setTxAmount(tx.amount.toString());
+        setTxDate(tx.date);
+        setIsTxModalOpen(true);
+      };
+
+      const handleSaveTransaction = (e) => {
+        e.preventDefault();
+        if (!txDescription || !txAmount || !txDate) return;
+
+        const numericAmount = parseFloat(txAmount);
+
+        if (editingTxId) {
+          // Atualiza registro existente
+          setTransactions(transactions.map(t => 
+            t.id === editingTxId 
+              ? { 
+                  ...t, 
+                  type: txType, 
+                  category: txType === 'income' ? 'income' : txCategory, 
+                  description: txDescription, 
+                  amount: numericAmount, 
+                  date: txDate 
+                } 
+              : t
+          ));
+        } else {
+          // Adiciona novo registro
+          const newTx = {
+            id: Math.random().toString(36).substr(2, 9),
+            type: txType,
+            category: txType === 'income' ? 'income' : txCategory,
+            description: txDescription,
+            amount: numericAmount,
+            date: txDate,
+          };
+          setTransactions([...transactions, newTx]);
+          setInteractionCount(prev => prev + 1);
+        }
+
+        setIsTxModalOpen(false);
+      };
+
+      const handleDelete = (id) => {
+        if (window.confirm("Deseja realmente excluir este lançamento?")) {
+          setTransactions(transactions.filter(t => t.id !== id));
+        }
+      };
+
+      const handleCopyPix = () => {
+        // Fallback robusto para copiar no ambiente iFrame/Mobile
+        const tempInput = document.createElement("input");
+        tempInput.value = pixKey;
+        document.body.appendChild(tempInput);
+        tempInput.select();
+        document.execCommand("copy");
+        document.body.removeChild(tempInput);
+        
+        setCopiedPix(true);
+        setTimeout(() => setCopiedPix(false), 2500);
+      };
+
+      const formatCurrency = (value) => {
+        return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+      };
+
+      return (
+        <div className="min-h-screen pb-10">
+          {/* CABEÇALHO INTEGRADO */}
+          <header className="bg-indigo-600 text-white px-4 pt-5 pb-4 rounded-b-3xl shadow-lg sticky top-0 z-10">
+            <div className="max-w-md mx-auto space-y-3">
+              
+              {/* Título do Aplicativo */}
+              <div className="text-center">
+                <h1 className="text-base sm:text-lg font-bold flex items-center justify-center gap-2 tracking-tight text-white">
+                  <i data-lucide="pie-chart" class="w-5 h-5 shrink-0 text-indigo-200"></i>
+                  <span>Orçamento Excellington</span>
+                </h1>
+              </div>
+
+              {/* Seletor de Mês e Ano Expandido e Centralizado */}
+              <div className="flex justify-center w-full px-2">
+                <div className="flex items-center justify-center bg-indigo-500/60 rounded-xl px-4 py-2 border border-indigo-400/40 shadow-inner w-full max-w-[260px]">
+                  <i data-lucide="calendar" class="w-4 h-4 mr-2 text-indigo-200 shrink-0"></i>
+                  <input 
+                    type="month" 
+                    value={currentMonth}
+                    onChange={(e) => setCurrentMonth(e.target.value)}
+                    className="bg-transparent text-white font-bold outline-none text-sm cursor-pointer text-center [&::-webkit-calendar-picker-indicator]:invert"
+                  />
+                </div>
+              </div>
+
+              {/* Saldo Principal */}
+              <div className="text-center py-0.5">
+                <p className="text-indigo-200 text-[10px] font-medium uppercase tracking-wider mb-0.5">Saldo do Mês</p>
+                <h2 className={`text-2xl font-bold tracking-tight ${stats.balance < 0 ? 'text-red-200' : 'text-white'}`}>
+                  {formatCurrency(stats.balance)}
+                </h2>
+              </div>
+
+              {/* Quadro de Receita e Despesa */}
+              <div className="flex justify-between bg-white/10 rounded-xl p-2.5 backdrop-blur-sm border border-white/10">
+                <div className="text-center w-1/2 border-r border-indigo-400/30">
+                  <p className="text-indigo-200 text-[10px] uppercase tracking-wider mb-0.5 flex items-center justify-center gap-1">
+                    <i data-lucide="arrow-up-circle" class="w-3 h-3 text-emerald-300"></i> Receitas
+                  </p>
+                  <p className="font-semibold text-xs sm:text-sm">{formatCurrency(stats.income)}</p>
+                </div>
+                <div className="text-center w-1/2">
+                  <p className="text-indigo-200 text-[10px] uppercase tracking-wider mb-0.5 flex items-center justify-center gap-1">
+                    <i data-lucide="arrow-down-circle" class="w-3 h-3 text-rose-300"></i> Despesas
+                  </p>
+                  <p className="font-semibold text-xs sm:text-sm">{formatCurrency(stats.expenses)}</p>
+                </div>
+              </div>
+
+              {/* AÇÕES DIRETA NO CABEÇALHO */}
+              <div className="flex items-center gap-2 pt-0.5">
+                <button 
+                  onClick={() => handleOpenCreateModal()}
+                  className="flex-1 bg-white text-indigo-700 hover:bg-indigo-50 font-bold py-2 px-3 rounded-xl shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5 text-xs"
+                >
+                  <i data-lucide="plus-circle" class="w-3.5 h-3.5 text-indigo-600"></i> Novo Lançamento
+                </button>
+                
+                <button 
+                  onClick={() => setIsTermsModalOpen(true)}
+                  className="bg-indigo-500/60 hover:bg-indigo-500 text-white p-2 rounded-xl border border-indigo-400/30 active:scale-95 transition-all flex items-center justify-center"
+                  title="Termos de Uso"
+                >
+                  <i data-lucide="info" class="w-3.5 h-3.5"></i>
+                </button>
+
+                <button 
+                  onClick={() => setIsPixModalOpen(true)}
+                  className="bg-emerald-500/80 hover:bg-emerald-500 text-white p-2 rounded-xl border border-emerald-400/30 active:scale-95 transition-all flex items-center justify-center"
+                  title="Apoiar via Pix"
+                >
+                  <i data-lucide="heart" class="w-3.5 h-3.5 fill-white"></i>
+                </button>
+              </div>
+
+            </div>
+          </header>
+
+          {/* CONTEÚDO PRINCIPAL */}
+          <main className="max-w-md mx-auto px-4 mt-5">
+            
+            {/* ALERTA DE ULTRAPASSAGEM (60% NECESSIDADES) */}
+            {stats.needsPct >= 60 && (
+              <div className="bg-red-50 border border-red-200 rounded-2xl p-3.5 mb-5 shadow-sm flex items-start gap-3">
+                <i data-lucide="alert-triangle" class="w-5 h-5 text-red-500 shrink-0 mt-0.5"></i>
+                <div>
+                  <h4 className="font-bold text-red-800 text-xs">Atenção: Necessidades em Alta!</h4>
+                  <p className="text-red-600 text-[11px] mt-0.5 leading-relaxed">
+                    Seus gastos com necessidades atingiram <strong>{stats.needsPct.toFixed(1)}%</strong> da receita do mês. O limite recomendado é de no máximo 60%.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* BLOCOS DO MÉTODO 50-30-20 */}
+            <section className="mb-6">
+              <div className="flex items-center justify-between mb-2.5">
+                <div className="flex items-center gap-1.5">
+                  <h3 className="font-bold text-sm text-slate-700">Método 50-30-20</h3>
+                  
+                  {/* Botão Didático Explicativo do Método */}
+                  <button 
+                    onClick={() => setIsMethodModalOpen(true)}
+                    className="text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 p-1 rounded-full border border-indigo-200/80 transition-colors flex items-center justify-center active:scale-95"
+                    title="Entenda o Método 50-30-20"
+                  >
+                    <i data-lucide="help-circle" class="w-4 h-4"></i>
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-2.5">
+                
+                {/* 50% Necessidades */}
+                <div className="bg-white rounded-2xl p-3.5 shadow-sm border border-slate-100">
+                  <div className="flex justify-between mb-1.5 items-center">
+                    <span className="font-semibold text-slate-700 text-xs flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                      Necessidades (50%)
+                    </span>
+                    <span className="text-xs font-semibold text-slate-600">{formatCurrency(stats.needs)}</span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2 mb-1 overflow-hidden">
+                    <div 
+                      className={`h-2 rounded-full transition-all duration-500 ${stats.needsPct >= 60 ? 'bg-red-500' : stats.needsPct > 50 ? 'bg-orange-400' : 'bg-blue-500'}`}
+                      style={{ width: `${Math.min(stats.needsPct, 100)}%` }}
+                    ></div>
+                  </div>
+                  <p className="text-[10px] text-right text-slate-400 font-medium">
+                    Consumido: <span className={stats.needsPct >= 60 ? 'text-red-500 font-bold' : 'text-slate-600'}>{stats.needsPct.toFixed(1)}%</span>
+                  </p>
+                </div>
+
+                {/* 30% Desejos */}
+                <div className="bg-white rounded-2xl p-3.5 shadow-sm border border-slate-100">
+                  <div className="flex justify-between mb-1.5 items-center">
+                    <span className="font-semibold text-slate-700 text-xs flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full bg-amber-400"></div>
+                      Desejos (30%)
+                    </span>
+                    <span className="text-xs font-semibold text-slate-600">{formatCurrency(stats.wants)}</span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2 mb-1 overflow-hidden">
+                    <div 
+                      className="bg-amber-400 h-2 rounded-full transition-all duration-500"
+                      style={{ width: `${Math.min(stats.wantsPct, 100)}%` }}
+                    ></div>
+                  </div>
+                  <p className="text-[10px] text-right text-slate-400 font-medium">Consumido: <span className="text-slate-600">{stats.wantsPct.toFixed(1)}%</span></p>
+                </div>
+
+                {/* 20% Futuro */}
+                <div className="bg-white rounded-2xl p-3.5 shadow-sm border border-slate-100">
+                  <div className="flex justify-between mb-1.5 items-center">
+                    <span className="font-semibold text-slate-700 text-xs flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                      Futuro (20%)
+                    </span>
+                    <span className="text-xs font-semibold text-slate-600">{formatCurrency(stats.future)}</span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2 mb-1 overflow-hidden">
+                    <div 
+                      className="bg-emerald-500 h-2 rounded-full transition-all duration-500"
+                      style={{ width: `${Math.min(stats.futurePct, 100)}%` }}
+                    ></div>
+                  </div>
+                  <p className="text-[10px] text-right text-slate-400 font-medium">Consumido: <span className="text-slate-600">{stats.futurePct.toFixed(1)}%</span></p>
+                </div>
+
+              </div>
+            </section>
+
+            {/* LISTA DE LANÇAMENTOS */}
+            <section>
+              <div className="flex justify-between items-center mb-2.5">
+                <h3 className="font-bold text-sm text-slate-700">Lançamentos do Mês</h3>
+                <span className="text-[11px] text-slate-400 font-medium">{monthlyTransactions.length} registro(s)</span>
+              </div>
+              
+              <div className="space-y-2">
+                {monthlyTransactions.length === 0 ? (
+                  <div className="text-center py-10 text-slate-400 bg-white rounded-2xl border border-slate-100 border-dashed">
+                    <i data-lucide="file-text" class="w-8 h-8 mx-auto mb-2 opacity-40"></i>
+                    <p className="text-xs font-medium">Nenhum lançamento neste mês.</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Use o botão "Novo Lançamento" no cabeçalho.</p>
+                  </div>
+                ) : (
+                  monthlyTransactions
+                    .sort((a,b) => new Date(b.date) - new Date(a.date))
+                    .map(tx => (
+                      <div key={tx.id} className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center">
+                        <div className="flex items-center gap-2.5">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                            tx.type === 'income' ? 'bg-emerald-100 text-emerald-600' :
+                            tx.category === 'needs' ? 'bg-blue-100 text-blue-600' :
+                            tx.category === 'wants' ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'
+                          }`}>
+                            <i data-lucide={
+                              tx.type === 'income' ? 'arrow-up-circle' :
+                              tx.category === 'needs' ? 'file-text' :
+                              tx.category === 'wants' ? 'heart' : 'pie-chart'
+                            } class="w-4 h-4"></i>
+                          </div>
+                          <div>
+                            <p className="font-semibold text-slate-800 text-xs">{tx.description}</p>
+                            <div className="flex gap-1.5 text-[10px] mt-0.5">
+                              <span className="text-slate-400">{tx.date.split('-').reverse().join('/')}</span>
+                              {tx.type === 'expense' && (
+                                <span className={`px-1 py-0.2 rounded font-medium ${
+                                  tx.category === 'needs' ? 'bg-blue-50 text-blue-600' :
+                                  tx.category === 'wants' ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'
+                                }`}>
+                                  {tx.category === 'needs' ? 'Necessidade' : tx.category === 'wants' ? 'Desejo' : 'Futuro'}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <span className={`font-bold text-xs ${tx.type === 'income' ? 'text-emerald-600' : 'text-slate-800'}`}>
+                            {tx.type === 'income' ? '+' : '-'}{formatCurrency(tx.amount)}
+                          </span>
+                          
+                          {/* Botão Editar */}
+                          <button 
+                            onClick={() => handleOpenEditModal(tx)} 
+                            className="text-slate-400 hover:text-indigo-600 p-1 rounded hover:bg-slate-50 transition-colors"
+                            title="Editar"
+                          >
+                            <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                          </button>
+
+                          {/* Botão Excluir */}
+                          <button 
+                            onClick={() => handleDelete(tx.id)} 
+                            className="text-slate-400 hover:text-red-500 p-1 rounded hover:bg-slate-50 transition-colors"
+                            title="Excluir"
+                          >
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                )}
+              </div>
+            </section>
+          </main>
+
+          {/* --- MODAIS --- */}
+          
+          {/* Modal Explicativo do Método 50-30-20 */}
+          {isMethodModalOpen && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+              <div className="bg-white w-full max-w-md rounded-3xl p-5 shadow-2xl relative">
+                <button onClick={() => setIsMethodModalOpen(false)} className="absolute top-4 right-4 p-1.5 bg-slate-100 rounded-full text-slate-500 hover:bg-slate-200">
+                  <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+                
+                <h3 className="text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
+                  <i data-lucide="book-open" class="text-indigo-600 w-5 h-5"></i> Como Funciona o Método 50-30-20?
+                </h3>
+                
+                <div className="text-[11px] text-slate-600 space-y-3 max-h-80 overflow-y-auto pr-1 custom-scrollbar leading-relaxed">
+                  <p>
+                    O <strong>Método 50-30-20</strong> é uma das estratégias de orçamento mais eficazes e recomendadas por especialistas financeiros para organizar a renda líquida mensal em três grandes blocos:
+                  </p>
+
+                  {/* Detalhes dos Blocos */}
+                  <div className="space-y-2">
+                    <div className="bg-blue-50 border border-blue-100 p-2.5 rounded-xl">
+                      <p className="font-bold text-blue-900 text-xs flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-blue-500"></span> 50% — Necessidades Essenciais
+                      </p>
+                      <p className="text-blue-700 mt-0.5">Despesas indispensáveis para viver: moradia, alimentação, transporte, saúde, contas básicas.</p>
+                    </div>
+
+                    <div className="bg-amber-50 border border-amber-100 p-2.5 rounded-xl">
+                      <p className="font-bold text-amber-900 text-xs flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-amber-400"></span> 30% — Desejos Pessoais
+                      </p>
+                      <p className="text-amber-700 mt-0.5">Gastos com estilo de vida e bem-estar: lazer, passeios, roupas, viagens, assinaturas de serviços.</p>
+                    </div>
+
+                    <div className="bg-emerald-50 border border-emerald-100 p-2.5 rounded-xl">
+                      <p className="font-bold text-emerald-900 text-xs flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span> 20% — Futuro e Investimentos
+                      </p>
+                      <p className="text-emerald-700 mt-0.5">Construção de reserva de emergência, investimentos e planejamento financeiro de longo prazo.</p>
+                    </div>
+                  </div>
+
+                  {/* Exemplo Prático */}
+                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                    <p className="font-bold text-slate-700 text-xs mb-1">Exemplo Prático (Renda de R$ 3.000):</p>
+                    <ul className="list-disc list-inside space-y-0.5 text-slate-600">
+                      <li><strong>Necessidades (50%):</strong> até R$ 1.500</li>
+                      <li><strong>Desejos (30%):</strong> até R$ 900</li>
+                      <li><strong>Futuro (20%):</strong> R$ 600</li>
+                    </ul>
+                  </div>
+
+                  {/* Dica de Adaptação */}
+                  <div className="bg-indigo-50 border border-indigo-100 p-2.5 rounded-xl text-indigo-900">
+                    <p className="font-bold text-xs flex items-center gap-1 mb-0.5">
+                      <i data-lucide="sparkles" class="w-3.5 h-3.5 text-indigo-600"></i> Adaptação à sua Realidade:
+                    </p>
+                    <p>
+                      O método é um ponto de partida flexível. Se você possui dívidas, redirecione temporariamente parte dos "Desejos" para quitação de passivos. <strong>A regra de ouro:</strong> as necessidades nunca devem ultrapassar 60% da renda!
+                    </p>
+                  </div>
+                </div>
+
+                <button 
+                  onClick={() => setIsMethodModalOpen(false)} 
+                  className="w-full bg-indigo-600 text-white font-bold py-2.5 rounded-xl mt-4 text-xs hover:bg-indigo-700 transition-colors"
+                >
+                  Entendi! Voltar ao App
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Modal de Lançamento (Novo / Edição) */}
+          {isTxModalOpen && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex justify-center items-end sm:items-center p-4">
+              <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl">
+                <div className="flex justify-between items-center mb-5">
+                  <h3 className="text-base font-bold text-slate-800">
+                    {editingTxId ? 'Editar Lançamento' : 'Novo Lançamento'}
+                  </h3>
+                  <button onClick={() => setIsTxModalOpen(false)} className="bg-slate-100 p-1.5 rounded-full text-slate-500 hover:bg-slate-200">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                  </button>
+                </div>
+
+                <form onSubmit={handleSaveTransaction} className="space-y-3.5">
+                  {/* Alternador de Tipo */}
+                  <div className="flex bg-slate-100 p-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setTxType('expense')}
+                      className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${txType === 'expense' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'}`}
+                    >
+                      Despesa
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTxType('income')}
+                      className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${txType === 'income' ? 'bg-emerald-500 shadow-sm text-white' : 'text-slate-500'}`}
+                    >
+                      Receita
+                    </button>
+                  </div>
+
+                  {/* Seleção do Bloco (Apenas Despesa) */}
+                  {txType === 'expense' && (
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Bloco (Método 50-30-20)</label>
+                      <select 
+                        value={txCategory} 
+                        onChange={(e) => setTxCategory(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-500 text-xs text-slate-700"
+                      >
+                        <option value="needs">50% - Necessidades (Moradia, saúde...)</option>
+                        <option value="wants">30% - Desejos (Lazer, roupas...)</option>
+                        <option value="future">20% - Futuro (Investimentos...)</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Descrição */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">
+                      {txType === 'income' ? 'Procedência / Descrição' : 'Descrição da Despesa'}
+                    </label>
+                    <input 
+                      type="text" 
+                      value={txDescription}
+                      onChange={(e) => setTxDescription(e.target.value)}
+                      placeholder={txType === 'income' ? 'Ex: Salário, Venda, Aluguel...' : 'Ex: Mercado, Conta de Luz, Jantar...'}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-500 text-xs text-slate-700"
+                      required
+                    />
+                  </div>
+
+                  {/* Valor e Data */}
+                  <div className="flex gap-2.5">
+                    <div className="flex-1">
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Valor (R$)</label>
+                      <input 
+                        type="number" 
+                        step="0.01"
+                        min="0"
+                        value={txAmount}
+                        onChange={(e) => setTxAmount(e.target.value)}
+                        placeholder="0,00"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-500 text-xs text-slate-700 font-semibold"
+                        required
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Data</label>
+                      <input 
+                        type="date" 
+                        value={txDate}
+                        onChange={(e) => setTxDate(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-500 text-xs text-slate-700"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl mt-1 transition-colors text-xs">
+                    {editingTxId ? 'Atualizar Lançamento' : 'Salvar Lançamento'}
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Modal de Termos de Uso */}
+          {isTermsModalOpen && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+              <div className="bg-white w-full max-w-md rounded-3xl p-5 shadow-2xl relative">
+                <button onClick={() => setIsTermsModalOpen(false)} className="absolute top-4 right-4 p-1.5 bg-slate-100 rounded-full text-slate-500">
+                  <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+                <h3 className="text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
+                  <i data-lucide="info" class="text-indigo-600 w-4 h-4"></i> Termos de Uso e Responsabilidade
+                </h3>
+                <div className="text-[11px] text-slate-600 space-y-2.5 max-h-72 overflow-y-auto pr-1 custom-scrollbar leading-relaxed">
+                  <p><strong>1. Uso da Aplicação:</strong> O aplicativo Orçamento Excellington foi desenvolvido para auxílio no planejamento e gestão financeira pessoal com base no Método 50-30-20.</p>
+                  <p><strong>2. Armazenamento de Dados:</strong> Todos os dados e registros informados pertencem unicamente ao usuário e são armazenados localmente na sessão do navegador.</p>
+                  <p><strong>3. Responsabilidade Financeira:</strong> O aplicativo é uma ferramenta de suporte visual e cálculo. Todas as decisões financeiras e obrigações de pagamentos são de inteira e exclusiva responsabilidade do usuário.</p>
+                  <p><strong>4. Flexibilidade do Método:</strong> O usuário entende que o percentual 50-30-20 é uma diretriz de partida e pode ser adaptado, priorizando a quitação de passivos e mantendo as necessidades sob o teto recomendado de 60%.</p>
+                </div>
+                <button onClick={() => setIsTermsModalOpen(false)} className="w-full bg-indigo-600 text-white font-bold py-2.5 rounded-xl mt-4 text-xs">
+                  Compreendi
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Modal de Apoio via Pix */}
+          {isPixModalOpen && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+              <div className="bg-white w-full max-w-sm rounded-3xl p-5 shadow-2xl relative text-center">
+                <button onClick={() => setIsPixModalOpen(false)} className="absolute top-4 right-4 p-1.5 bg-slate-100 rounded-full text-slate-500">
+                  <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+                
+                <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-2.5">
+                  <i data-lucide="heart" class="w-6 h-6 text-emerald-500 fill-emerald-500"></i>
+                </div>
+                
+                <h3 className="text-base font-bold text-slate-800 mb-1">Apoie o Projeto!</h3>
+                <p className="text-xs text-slate-600 mb-4 leading-relaxed">
+                  Se o Orçamento Excellington está ajudando nas suas finanças, você pode apoiar a manutenção do projeto realizando uma doação, de qualquer valor, via Pix.
+                </p>
+                
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80 mb-3">
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Chave Pix (E-mail)</p>
+                  <p className="font-mono text-slate-800 text-xs select-all font-semibold bg-white py-1.5 px-2 rounded border border-slate-200">
+                    {pixKey}
+                  </p>
+                </div>
+
+                {/* Botão Copiar Pix */}
+                <button 
+                  onClick={handleCopyPix}
+                  className={`w-full font-bold py-2.5 rounded-xl text-xs mb-2 transition-all flex items-center justify-center gap-1.5 border ${
+                    copiedPix 
+                      ? 'bg-emerald-100 border-emerald-300 text-emerald-700' 
+                      : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-700'
+                  }`}
+                >
+                  <i data-lucide={copiedPix ? "check-circle" : "copy"} class="w-4 h-4"></i>
+                  <span>{copiedPix ? "Chave Pix Copiada!" : "Copiar Chave Pix"}</span>
+                </button>
+
+                <button 
+                  onClick={() => setIsPixModalOpen(false)} 
+                  className="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-xs transition-colors"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Renderizar a aplicação
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+</html>
+
+
