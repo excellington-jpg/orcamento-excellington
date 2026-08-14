@@ -35,8 +35,28 @@
 
     function App() {
       // --- ESTADO ---
-      const [transactions, setTransactions] = useState([]);
-
+      const [transactions, setTransactions] = useState(() => {
+  try {
+    const savedTransactions = localStorage.getItem('excellington_transactions');
+    return savedTransactions ? JSON.parse(savedTransactions) : [];
+  } catch (error) {
+    console.error('Erro ao carregar os lançamentos:', error);
+    return [];
+  }
+});
+      
+// --- PERSISTÊNCIA DOS DADOS NO DISPOSITIVO ---
+useEffect(() => {
+  try {
+    localStorage.setItem(
+      'excellington_transactions',
+      JSON.stringify(transactions)
+    );
+  } catch (error) {
+    console.error('Erro ao salvar os lançamentos:', error);
+  }
+}, [transactions]);
+      
       const [currentMonth, setCurrentMonth] = useState(
         new Date().toISOString().slice(0, 7) // Formato YYYY-MM
       );
