@@ -66,16 +66,6 @@
             }));
           }
 
-          const logout = () => {
-  if (
-    window.confirm(
-      "Deseja realmente sair do aplicativo?"
-    )
-  ) {
-    window.close();
-  }
-};
-
           return [];
 
         } catch (error) {
@@ -704,6 +694,21 @@
 
 
       // =========================================================
+      // SAIR DO APLICATIVO
+      // =========================================================
+
+      const logout = () => {
+        if (
+          window.confirm(
+            "Deseja realmente sair do aplicativo?"
+          )
+        ) {
+          window.close();
+        }
+      };
+
+
+      // =========================================================
       // COPIAR PIX
       // =========================================================
 
@@ -989,15 +994,15 @@
                 </button>
 
                 <button
-  onClick={logout}
-  className="bg-red-500/80 hover:bg-red-500 text-white p-2 rounded-xl border border-red-400/30 active:scale-95 transition-all flex items-center justify-center"
-  title="Sair"
->
-  <i
-    data-lucide="log-out"
-    className="w-3.5 h-3.5"
-  ></i>
-</button>
+                  onClick={logout}
+                  className="bg-red-500/80 hover:bg-red-500 text-white p-2 rounded-xl border border-red-400/30 active:scale-95 transition-all flex items-center justify-center"
+                  title="Sair"
+                >
+                  <i
+                    data-lucide="log-out"
+                    className="w-3.5 h-3.5"
+                  ></i>
+                </button>
 
               </div>
 
