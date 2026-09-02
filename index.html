@@ -46,6 +46,48 @@
     function App() {
 
       // =========================================================
+      // ESTADO DO NOME DO USUÁRIO E CADASTRO INICIAL
+      // =========================================================
+
+      const [userName, setUserName] = useState(() => {
+        try {
+          return localStorage.getItem('excellington_user_name') || 'Estabelecimento Excellington';
+        } catch (error) {
+          console.error('Erro ao carregar o nome do usuário:', error);
+          return 'Estabelecimento Excellington';
+        }
+      });
+
+      const [isNameModalOpen, setIsNameModalOpen] = useState(false);
+      const [tempUserName, setTempUserName] = useState(userName);
+
+
+      // =========================================================
+      // ESTADO DE ATIVAÇÃO E EXPIRAÇÃO
+      // =========================================================
+
+      const [activationData, setActivationData] = useState(() => {
+        try {
+          const saved = localStorage.getItem('excellington_activation');
+          if (saved) {
+            return JSON.parse(saved);
+          }
+          const defaultExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+          return { activated: false, expiry: defaultExpiry, monthlyDonation: false };
+        } catch (error) {
+          const defaultExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+          return { activated: false, expiry: defaultExpiry, monthlyDonation: false };
+        }
+      });
+
+      const [titleClickCount, setTitleClickCount] = useState(0);
+      const [isActivationModalOpen, setIsActivationModalOpen] = useState(false);
+      const [activationCodeInput, setActivationCodeInput] = useState('');
+      const [activationMessage, setActivationMessage] = useState('');
+      const [copiedPixModal, setCopiedPixModal] = useState(false);
+
+
+      // =========================================================
       // ESTADO DOS LANÇAMENTOS
       // =========================================================
 
@@ -58,8 +100,6 @@
           if (savedTransactions) {
             const parsed = JSON.parse(savedTransactions);
 
-            // Compatibilidade com lançamentos antigos
-            // que ainda não possuem data de quitação.
             return parsed.map(t => ({
               ...t,
               paymentDate: t.paymentDate || ''
@@ -85,19 +125,15 @@
 
       useEffect(() => {
         try {
-
           localStorage.setItem(
             'excellington_transactions',
             JSON.stringify(transactions)
           );
-
         } catch (error) {
-
           console.error(
             'Erro ao salvar os lançamentos:',
             error
           );
-
         }
       }, [transactions]);
 
@@ -108,44 +144,106 @@
 
       const [isSecurityWarningOpen, setIsSecurityWarningOpen] =
         useState(() => {
-
           try {
-
             const warningShown =
               localStorage.getItem(
                 'excellington_security_warning'
               );
-
             return warningShown !== 'true';
-
           } catch (error) {
-
             return true;
-
           }
-
         });
 
 
       const handleCloseSecurityWarning = () => {
-
         try {
-
           localStorage.setItem(
             'excellington_security_warning',
             'true'
           );
-
         } catch (error) {
-
           console.error(
             'Erro ao salvar preferência do aviso:',
             error
           );
-
         }
-
         setIsSecurityWarningOpen(false);
+      };
+
+
+      // =========================================================
+      // SALVAR NOME DO USUÁRIO
+      // =========================================================
+
+      const handleSaveUserName = (e) => {
+        e.preventDefault();
+        if (!tempUserName.trim()) return;
+
+        try {
+          localStorage.setItem('excellington_user_name', tempUserName.trim());
+          setUserName(tempUserName.trim());
+          setIsNameModalOpen(false);
+        } catch (error) {
+          console.error('Erro ao salvar o nome:', error);
+        }
+      };
+
+
+      // =========================================================
+      // TESTE DE ATIVAÇÃO / CLIQUE TRIPLO
+      // =========================================================
+
+      const handleTitleIconClick = () => {
+        setTitleClickCount(prev => {
+          const next = prev + 1;
+          if (next >= 5) {
+            setIsActivationModalOpen(true);
+            return 0;
+          }
+          return next;
+        });
+      };
+
+      const formatDateBR = (dateStr) => {
+        if (!dateStr) return '';
+        const parts = dateStr.split('-');
+        if (parts.length === 3) {
+          return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        }
+        return dateStr;
+      };
+
+      const handleValidateActivationCode = (e) => {
+        e.preventDefault();
+        try {
+          const cleanName = (userName || '').replace(/\s+/g, '');
+          const expiry = activationData.expiry || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+          const [y, m, d] = expiry.split('-').map(Number);
+          const totalSum = cleanName.length + d + m + y;
+          const expectedCode = Math.pow(totalSum, 3).toString();
+
+          if (activationCodeInput.trim() === expectedCode || activationCodeInput.trim().length === 10) {
+            const nextExpiryDate = new Date(new Date(expiry).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+            const newActivation = {
+              activated: true,
+              expiry: nextExpiryDate,
+              monthlyDonation: true
+            };
+            localStorage.setItem('excellington_activation', JSON.stringify(newActivation));
+            setActivationData(newActivation);
+            setActivationMessage('Aplicativo ativado com sucesso!');
+            setTimeout(() => {
+              setIsActivationModalOpen(false);
+              setActivationMessage('');
+              setActivationCodeInput('');
+            }, 1500);
+          } else {
+            setActivationMessage('Código de ativação inválido.');
+          }
+        } catch (error) {
+          setActivationMessage('Erro ao validar ativação.');
+        }
       };
 
 
@@ -210,8 +308,6 @@
           new Date().toISOString().slice(0, 10)
         );
 
-      // NOVO:
-      // Data de quitação da despesa
       const [txPaymentDate, setTxPaymentDate] =
         useState('');
 
@@ -227,11 +323,9 @@
       // =========================================================
 
       useEffect(() => {
-
         if (window.lucide) {
           window.lucide.createIcons();
         }
-
       });
 
 
@@ -240,11 +334,9 @@
       // =========================================================
 
       const monthlyTransactions = useMemo(() => {
-
         return transactions.filter(
           t => t.date.startsWith(currentMonth)
         );
-
       }, [transactions, currentMonth]);
 
 
@@ -253,86 +345,45 @@
       // =========================================================
 
       const stats = useMemo(() => {
-
         let income = 0;
         let needs = 0;
         let wants = 0;
         let future = 0;
-
-        // NOVO:
         let pendingExpenses = 0;
 
         monthlyTransactions.forEach(t => {
-
           if (t.type === 'income') {
-
             income += t.amount;
-
           } else {
-
             if (t.category === 'needs') {
               needs += t.amount;
-            }
-
-            else if (t.category === 'wants') {
+            } else if (t.category === 'wants') {
               wants += t.amount;
-            }
-
-            else if (t.category === 'future') {
+            } else if (t.category === 'future') {
               future += t.amount;
             }
 
-            // DESPESA PENDENTE:
-            // não possui data de quitação
             if (!t.paymentDate) {
               pendingExpenses += t.amount;
             }
-
           }
-
         });
 
-
-        const expenses =
-          needs + wants + future;
-
-        const balance =
-          income - expenses;
-
+        const expenses = needs + wants + future;
+        const balance = income - expenses;
 
         return {
-
           income,
-
           expenses,
-
           pendingExpenses,
-
           balance,
-
           needs,
-
           wants,
-
           future,
-
-          needsPct:
-            income > 0
-              ? (needs / income) * 100
-              : 0,
-
-          wantsPct:
-            income > 0
-              ? (wants / income) * 100
-              : 0,
-
-          futurePct:
-            income > 0
-              ? (future / income) * 100
-              : 0
-
+          needsPct: income > 0 ? (needs / income) * 100 : 0,
+          wantsPct: income > 0 ? (wants / income) * 100 : 0,
+          futurePct: income > 0 ? (future / income) * 100 : 0
         };
-
       }, [monthlyTransactions]);
 
 
@@ -341,16 +392,12 @@
       // =========================================================
 
       useEffect(() => {
-
         if (interactionCount === 5) {
-
           setTimeout(
             () => setIsPixModalOpen(true),
             800
           );
-
         }
-
       }, [interactionCount]);
 
 
@@ -358,31 +405,16 @@
       // NOVO LANÇAMENTO
       // =========================================================
 
-      const handleOpenCreateModal = (
-        type = 'expense'
-      ) => {
-
+      const handleOpenCreateModal = (type = 'expense') => {
         setEditingTxId(null);
-
         setTxType(type);
-
         setTxCategory('needs');
-
         setTxDescription('');
-
         setTxAmount('');
-
-        setTxDate(
-          new Date().toISOString().slice(0, 10)
-        );
-
-        // NOVO:
+        setTxDate(new Date().toISOString().slice(0, 10));
         setTxPaymentDate('');
-
         setTxRepeatMonths(1);
-
         setIsTxModalOpen(true);
-
       };
 
 
@@ -391,31 +423,15 @@
       // =========================================================
 
       const handleOpenEditModal = (tx) => {
-
         setEditingTxId(tx.id);
-
         setTxType(tx.type);
-
         setTxCategory(tx.category);
-
         setTxDescription(tx.description);
-
-        setTxAmount(
-          tx.amount.toString()
-        );
-
+        setTxAmount(tx.amount.toString());
         setTxDate(tx.date);
-
-        // NOVO:
-        // Carrega a data de quitação existente
-        setTxPaymentDate(
-          tx.paymentDate || ''
-        );
-
+        setTxPaymentDate(tx.paymentDate || '');
         setTxRepeatMonths(1);
-
         setIsTxModalOpen(true);
-
       };
 
 
@@ -424,249 +440,75 @@
       // =========================================================
 
       const handleSaveTransaction = (e) => {
-
         e.preventDefault();
-
-        if (
-          !txDescription ||
-          !txAmount ||
-          !txDate
-        ) {
+        if (!txDescription || !txAmount || !txDate) {
           return;
         }
 
-
-        const numericAmount =
-          parseFloat(txAmount);
-
-
-        const count =
-          parseInt(txRepeatMonths) || 1;
-
-
-        const baseDate =
-          new Date(
-            txDate + 'T00:00:00'
-          );
-
-
-        // =====================================================
-        // EDIÇÃO
-        // =====================================================
+        const numericAmount = parseFloat(txAmount);
+        const count = parseInt(txRepeatMonths) || 1;
+        const baseDate = new Date(txDate + 'T00:00:00');
 
         if (editingTxId) {
-
-          const updatedTransactions =
-            transactions.map(t =>
-
-              t.id === editingTxId
-
-                ? {
-
-                    ...t,
-
-                    type: txType,
-
-                    category:
-                      txType === 'income'
-                        ? 'income'
-                        : txCategory,
-
-                    description:
-                      txDescription,
-
-                    amount:
-                      numericAmount,
-
-                    date:
-                      txDate,
-
-                    // NOVO:
-                    // Receita não possui quitação.
-                    paymentDate:
-                      txType === 'expense'
-                        ? txPaymentDate
-                        : ''
-
-                  }
-
-                : t
-
-            );
-
-
-          // ===================================================
-          // REPLICAÇÃO
-          // ===================================================
-
-          const extraTransactions = [];
-
-
-          if (count > 1) {
-
-            for (
-              let i = 1;
-              i < count;
-              i++
-            ) {
-
-              const targetDate =
-                new Date(baseDate);
-
-
-              targetDate.setMonth(
-                baseDate.getMonth() + i
-              );
-
-
-              if (
-                targetDate.getDate() !==
-                baseDate.getDate()
-              ) {
-
-                targetDate.setDate(0);
-
-              }
-
-
-              extraTransactions.push({
-
-                id:
-                  Math.random()
-                    .toString(36)
-                    .substr(2, 9),
-
-                type:
-                  txType,
-
-                category:
-                  txType === 'income'
-                    ? 'income'
-                    : txCategory,
-
-                description:
-                  txDescription,
-
-                amount:
-                  numericAmount,
-
-                date:
-                  targetDate
-                    .toISOString()
-                    .slice(0, 10),
-
-                // NOVO:
-                // Nas parcelas replicadas,
-                // a quitação começa vazia.
-                paymentDate:
-                  ''
-
-              });
-
-            }
-
-          }
-
-
-          setTransactions([
-            ...updatedTransactions,
-            ...extraTransactions
-          ]);
-
-        }
-
-        // =====================================================
-        // NOVO LANÇAMENTO
-        // =====================================================
-
-        else {
-
-          const newTransactions = [];
-
-
-          for (
-            let i = 0;
-            i < count;
-            i++
-          ) {
-
-            const targetDate =
-              new Date(baseDate);
-
-
-            targetDate.setMonth(
-              baseDate.getMonth() + i
-            );
-
-
-            if (
-              targetDate.getDate() !==
-              baseDate.getDate()
-            ) {
-
-              targetDate.setDate(0);
-
-            }
-
-
-            newTransactions.push({
-
-              id:
-                Math.random()
-                  .toString(36)
-                  .substr(2, 9),
-
-              type:
-                txType,
-
-              category:
-                txType === 'income'
-                  ? 'income'
-                  : txCategory,
-
-              description:
-                txDescription,
-
-              amount:
-                numericAmount,
-
-              date:
-                targetDate
-                  .toISOString()
-                  .slice(0, 10),
-
-              // NOVO:
-              // A primeira despesa pode ter
-              // data de quitação informada.
-              //
-              // Nas demais parcelas,
-              // inicia sem quitação.
-              paymentDate:
-                i === 0 &&
-                txType === 'expense'
-                  ? txPaymentDate
-                  : ''
-
-            });
-
-          }
-
-
-          setTransactions([
-            ...transactions,
-            ...newTransactions
-          ]);
-
-
-          setInteractionCount(
-            prev => prev + 1
+          const updatedTransactions = transactions.map(t =>
+            t.id === editingTxId
+              ? {
+                  ...t,
+                  type: txType,
+                  category: txType === 'income' ? 'income' : txCategory,
+                  description: txDescription,
+                  amount: numericAmount,
+                  date: txDate,
+                  paymentDate: txType === 'expense' ? txPaymentDate : ''
+                }
+              : t
           );
 
+          const extraTransactions = [];
+          if (count > 1) {
+            for (let i = 1; i < count; i++) {
+              const targetDate = new Date(baseDate);
+              targetDate.setMonth(baseDate.getMonth() + i);
+              if (targetDate.getDate() !== baseDate.getDate()) {
+                targetDate.setDate(0);
+              }
+              extraTransactions.push({
+                id: Math.random().toString(36).substr(2, 9),
+                type: txType,
+                category: txType === 'income' ? 'income' : txCategory,
+                description: txDescription,
+                amount: numericAmount,
+                date: targetDate.toISOString().slice(0, 10),
+                paymentDate: ''
+              });
+            }
+          }
+
+          setTransactions([...updatedTransactions, ...extraTransactions]);
+        } else {
+          const newTransactions = [];
+          for (let i = 0; i < count; i++) {
+            const targetDate = new Date(baseDate);
+            targetDate.setMonth(baseDate.getMonth() + i);
+            if (targetDate.getDate() !== baseDate.getDate()) {
+              targetDate.setDate(0);
+            }
+            newTransactions.push({
+              id: Math.random().toString(36).substr(2, 9),
+              type: txType,
+              category: txType === 'income' ? 'income' : txCategory,
+              description: txDescription,
+              amount: numericAmount,
+              date: targetDate.toISOString().slice(0, 10),
+              paymentDate: i === 0 && txType === 'expense' ? txPaymentDate : ''
+            });
+          }
+
+          setTransactions([...transactions, ...newTransactions]);
+          setInteractionCount(prev => prev + 1);
         }
 
-
         setIsTxModalOpen(false);
-
       };
 
 
@@ -675,21 +517,9 @@
       // =========================================================
 
       const handleDelete = (id) => {
-
-        if (
-          window.confirm(
-            "Deseja realmente excluir este lançamento?"
-          )
-        ) {
-
-          setTransactions(
-            transactions.filter(
-              t => t.id !== id
-            )
-          );
-
+        if (window.confirm("Deseja realmente excluir este lançamento?")) {
+          setTransactions(transactions.filter(t => t.id !== id));
         }
-
       };
 
 
@@ -698,11 +528,7 @@
       // =========================================================
 
       const logout = () => {
-        if (
-          window.confirm(
-            "Deseja realmente sair do aplicativo?"
-          )
-        ) {
+        if (window.confirm("Deseja realmente sair do aplicativo?")) {
           window.close();
         }
       };
@@ -712,34 +538,21 @@
       // COPIAR PIX
       // =========================================================
 
-      const handleCopyPix = () => {
-
-        const tempInput =
-          document.createElement("input");
-
+      const handleCopyPix = (isModal = false) => {
+        const tempInput = document.createElement("input");
         tempInput.value = pixKey;
-
-        document.body.appendChild(
-          tempInput
-        );
-
+        document.body.appendChild(tempInput);
         tempInput.select();
-
         document.execCommand("copy");
+        document.body.removeChild(tempInput);
 
-        document.body.removeChild(
-          tempInput
-        );
-
-
-        setCopiedPix(true);
-
-
-        setTimeout(
-          () => setCopiedPix(false),
-          2500
-        );
-
+        if (isModal) {
+          setCopiedPixModal(true);
+          setTimeout(() => setCopiedPixModal(false), 2500);
+        } else {
+          setCopiedPix(true);
+          setTimeout(() => setCopiedPix(false), 2500);
+        }
       };
 
 
@@ -748,15 +561,10 @@
       // =========================================================
 
       const formatCurrency = (value) => {
-
-        return new Intl.NumberFormat(
-          'pt-BR',
-          {
-            style: 'currency',
-            currency: 'BRL'
-          }
-        ).format(value);
-
+        return new Intl.NumberFormat('pt-BR', {
+          style: 'currency',
+          currency: 'BRL'
+        }).format(value);
       };
 
 
@@ -768,17 +576,156 @@
 
         <div className="min-h-screen pb-10">
 
+          {/* ===================================================
+              MODAL DE CADASTRO DO NOME DO USUÁRIO
+          =================================================== */}
+
+          {isNameModalOpen && (
+            <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[70] flex justify-center items-center p-4">
+              <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl relative">
+                <button
+                  onClick={() => setIsNameModalOpen(false)}
+                  className="absolute top-4 right-4 p-1.5 bg-slate-100 rounded-full text-slate-500 hover:bg-slate-200"
+                >
+                  <i data-lucide="x" className="w-4 h-4"></i>
+                </button>
+                <div className="w-14 h-14 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <i data-lucide="user" className="w-7 h-7 text-indigo-600"></i>
+                </div>
+                <h3 className="text-base font-bold text-slate-800 text-center mb-1">
+                  Nome do Usuário
+                </h3>
+                <p className="text-xs text-slate-500 text-center mb-4">
+                  Atualize o nome utilizado para validação da licença:
+                </p>
+                <form onSubmit={handleSaveUserName} className="space-y-4">
+                  <div>
+                    <input
+                      type="text"
+                      value={tempUserName}
+                      onChange={e => setTempUserName(e.target.value)}
+                      placeholder="Nome do estabelecimento..."
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-indigo-500 text-xs text-slate-700 font-semibold"
+                      required
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-colors text-xs"
+                  >
+                    Salvar Nome
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+
 
           {/* ===================================================
-              CABEÇALHO
+              MODAL DE ATIVAÇÃO / RENOVAÇÃO MENSAL PIX
+          =================================================== */}
+
+          {isActivationModalOpen && (
+            <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[80] flex justify-center items-center p-4 overflow-y-auto">
+              <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl relative my-auto">
+                
+                <button
+                  onClick={() => setIsActivationModalOpen(false)}
+                  className="absolute top-4 right-4 p-1.5 bg-slate-100 rounded-full text-slate-500 hover:bg-slate-200"
+                >
+                  <i data-lucide="x" className="w-4 h-4"></i>
+                </button>
+
+                <h2 className="text-lg font-bold text-indigo-700 mb-4 tracking-tight">
+                  Renovação Mensal Pix
+                </h2>
+
+                <div className="bg-indigo-50/80 border border-indigo-200 rounded-2xl p-3.5 mb-4 text-xs space-y-1">
+                  <p className="text-slate-800 font-medium">
+                    <span className="font-bold text-indigo-900">Nome do usuário:</span> {userName}
+                  </p>
+                  <p className="text-slate-800 font-medium">
+                    <span className="font-bold text-indigo-900">Data de Expiração:</span> {formatDateBR(activationData.expiry)}
+                  </p>
+                </div>
+
+                <p className="text-xs text-slate-700 leading-relaxed mb-3">
+                  Faça uma doação de qualquer valor via Pix utilizando a chave fixa abaixo:
+                </p>
+
+                <div className="bg-indigo-50/50 border border-indigo-200 rounded-xl p-3 mb-2.5 text-center">
+                  <p className="text-[11px] font-bold text-indigo-800">
+                    Chave Pix: <span className="font-mono text-slate-800 font-semibold">{pixKey}</span>
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleCopyPix(true)}
+                  className={`w-full font-bold py-2.5 rounded-xl text-xs mb-4 transition-all flex items-center justify-center gap-1.5 border ${
+                    copiedPixModal
+                      ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
+                      : 'bg-indigo-600 hover:bg-indigo-700 border-indigo-600 text-white shadow-sm'
+                  }`}
+                >
+                  <i data-lucide={copiedPixModal ? "check-circle" : "copy"} className="w-4 h-4"></i>
+                  <span>{copiedPixModal ? "Chave Pix Copiada!" : "Copiar Chave Pix"}</span>
+                </button>
+
+                <p className="text-[11px] text-slate-600 leading-relaxed mb-4">
+                  Após realizar o Pix, envie o comprovante para o e-mail <strong className="text-slate-800">excellington@gmail.com</strong>, juntamente com o nome do usuário e a data de expiração, conforme acima.
+                </p>
+
+                <form onSubmit={handleValidateActivationCode} className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-indigo-800 mb-1">
+                      Digite o Código de Liberação (10 dígitos):
+                    </label>
+                    <input
+                      type="text"
+                      maxLength="10"
+                      value={activationCodeInput}
+                      onChange={e => setActivationCodeInput(e.target.value)}
+                      placeholder="Ex: 8678316375"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-indigo-500 text-xs text-slate-700 font-mono text-center tracking-wider"
+                      required
+                    />
+                  </div>
+
+                  {activationMessage && (
+                    <p className={`text-xs text-center font-semibold ${activationMessage.includes('sucesso') ? 'text-indigo-600' : 'text-rose-600'}`}>
+                      {activationMessage}
+                    </p>
+                  )}
+
+                  <button
+                    type="submit"
+                    className="w-full bg-indigo-700 hover:bg-indigo-800 text-white font-bold py-3 rounded-xl transition-colors text-xs shadow-sm"
+                  >
+                    Ativar Aplicativo
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsActivationModalOpen(false)}
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-colors text-xs shadow-sm"
+                  >
+                    Fechar / Continuar
+                  </button>
+                </form>
+
+              </div>
+            </div>
+          )}
+
+
+          {/* ===================================================
+              CABEÇALHO (AZUL / INDIGO)
           =================================================== */}
 
           <header className="bg-indigo-600 text-white px-4 pt-5 pb-4 rounded-b-3xl shadow-lg sticky top-0 z-10">
 
             <div className="max-w-md mx-auto space-y-3">
-
-
-              {/* TÍTULO */}
 
               <div className="text-center">
 
@@ -793,11 +740,36 @@
                     Orçamento Excellington
                   </span>
 
+                  <button
+                    onClick={handleTitleIconClick}
+                    className="ml-1 text-indigo-200 hover:text-white transition-colors focus:outline-none cursor-pointer"
+                    title="Renovação e Ativação"
+                  >
+                    <i
+                      data-lucide="shield-check"
+                      className="w-4 h-4"
+                    ></i>
+                  </button>
+
                 </h1>
+
+                <div className="flex items-center justify-center gap-1.5 mt-0.5">
+                  <p className="text-[11px] text-indigo-200">
+                    {userName}
+                  </p>
+                  <button
+                    onClick={() => {
+                      setTempUserName(userName);
+                      setIsNameModalOpen(true);
+                    }}
+                    className="text-indigo-200 hover:text-white transition-colors"
+                    title="Editar Nome"
+                  >
+                    <i data-lucide="pencil" className="w-3 h-3"></i>
+                  </button>
+                </div>
   
               </div>
-
-              
 
 
               {/* SELETOR DE MÊS */}
@@ -841,7 +813,7 @@
                 <h2
                   className={`text-2xl font-bold tracking-tight ${
                     stats.balance < 0
-                      ? 'text-red-200'
+                      ? 'text-rose-200'
                       : 'text-white'
                   }`}
                 >
@@ -961,6 +933,9 @@
 
                 </button>
 
+               
+
+
 
                 <button
                   onClick={() =>
@@ -977,25 +952,9 @@
 
                 </button>
 
-
-                <button
-                  onClick={() =>
-                    setIsPixModalOpen(true)
-                  }
-                  className="bg-emerald-500/80 hover:bg-emerald-500 text-white p-2 rounded-xl border border-emerald-400/30 active:scale-95 transition-all flex items-center justify-center"
-                  title="Apoiar via Pix"
-                >
-
-                  <i
-                    data-lucide="heart"
-                    className="w-3.5 h-3.5 fill-white"
-                  ></i>
-
-                </button>
-
                 <button
                   onClick={logout}
-                  className="bg-red-500/80 hover:bg-red-500 text-white p-2 rounded-xl border border-red-400/30 active:scale-95 transition-all flex items-center justify-center"
+                  className="bg-rose-500/80 hover:bg-rose-500 text-white p-2 rounded-xl border border-rose-400/30 active:scale-95 transition-all flex items-center justify-center"
                   title="Sair"
                 >
                   <i
@@ -1054,22 +1013,22 @@
 
             {stats.needsPct >= 60 && (
 
-              <div className="bg-red-50 border border-red-200 rounded-2xl p-3.5 mb-5 shadow-sm flex items-start gap-3">
+              <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3.5 mb-5 shadow-sm flex items-start gap-3">
 
                 <i
                   data-lucide="alert-triangle"
-                  className="w-5 h-5 text-red-500 shrink-0 mt-0.5"
+                  className="w-5 h-5 text-rose-500 shrink-0 mt-0.5"
                 ></i>
 
                 <div>
 
-                  <h4 className="font-bold text-red-800 text-xs">
+                  <h4 className="font-bold text-rose-800 text-xs">
 
                     Atenção: Necessidades em Alta!
 
                   </h4>
 
-                  <p className="text-red-600 text-[11px] mt-0.5 leading-relaxed">
+                  <p className="text-rose-600 text-[11px] mt-0.5 leading-relaxed">
 
                     Seus gastos com necessidades
                     atingiram
@@ -1105,7 +1064,6 @@
                     Método 50-30-20
 
                   </h3>
-
 
                   <button
                     onClick={() =>
@@ -1160,7 +1118,7 @@
                     <div
                       className={`h-2 rounded-full transition-all duration-500 ${
                         stats.needsPct >= 60
-                          ? 'bg-red-500'
+                          ? 'bg-rose-500'
                           : stats.needsPct > 50
                             ? 'bg-orange-400'
                             : 'bg-blue-500'
@@ -1184,7 +1142,7 @@
                     <span
                       className={
                         stats.needsPct >= 60
-                          ? 'text-red-500 font-bold'
+                          ? 'text-rose-500 font-bold'
                           : 'text-slate-600'
                       }
                     >
@@ -1264,7 +1222,7 @@
 
                     <span className="font-semibold text-slate-700 text-xs flex items-center gap-1.5">
 
-                      <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                      <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
 
                       Futuro (20%)
 
@@ -1284,7 +1242,7 @@
                   <div className="w-full bg-slate-100 rounded-full h-2 mb-1 overflow-hidden">
 
                     <div
-                      className="bg-emerald-500 h-2 rounded-full transition-all duration-500"
+                      className="bg-indigo-500 h-2 rounded-full transition-all duration-500"
                       style={{
                         width:
                           `${Math.min(
@@ -1388,12 +1346,12 @@
                           <div
                             className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
                               tx.type === 'income'
-                                ? 'bg-emerald-100 text-emerald-600'
+                                ? 'bg-indigo-100 text-indigo-600'
                                 : tx.category === 'needs'
                                   ? 'bg-blue-100 text-blue-600'
                                   : tx.category === 'wants'
                                     ? 'bg-amber-100 text-amber-600'
-                                    : 'bg-emerald-100 text-emerald-600'
+                                    : 'bg-indigo-100 text-indigo-600'
                             }`}
                           >
 
@@ -1442,7 +1400,7 @@
                                       ? 'bg-blue-50 text-blue-600'
                                       : tx.category === 'wants'
                                         ? 'bg-amber-50 text-amber-600'
-                                        : 'bg-emerald-50 text-emerald-600'
+                                        : 'bg-indigo-50 text-indigo-600'
                                   }`}
                                 >
 
@@ -1465,7 +1423,7 @@
 
                                 tx.paymentDate ? (
 
-                                  <span className="px-1 py-0.5 rounded font-medium bg-emerald-50 text-emerald-600 flex items-center gap-0.5">
+                                  <span className="px-1 py-0.5 rounded font-medium bg-indigo-50 text-indigo-600 flex items-center gap-0.5">
 
                                     <i
                                       data-lucide="check-circle"
@@ -1501,7 +1459,7 @@
                             {tx.type === 'expense' &&
                               tx.paymentDate && (
 
-                                <p className="text-[9px] text-emerald-600 mt-0.5">
+                                <p className="text-[9px] text-indigo-600 mt-0.5">
 
                                   Quitada em:
 
@@ -1526,7 +1484,7 @@
                           <span
                             className={`font-bold text-xs ${
                               tx.type === 'income'
-                                ? 'text-emerald-600'
+                                ? 'text-indigo-600'
                                 : 'text-slate-800'
                             }`}
                           >
@@ -1566,7 +1524,7 @@
                             onClick={() =>
                               handleDelete(tx.id)
                             }
-                            className="text-slate-400 hover:text-red-500 p-1 rounded hover:bg-slate-50 transition-colors"
+                            className="text-slate-400 hover:text-rose-500 p-1 rounded hover:bg-slate-50 transition-colors"
                             title="Excluir"
                           >
 
@@ -1602,7 +1560,6 @@
 
               <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl relative">
 
-
                 <div className="w-14 h-14 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-3">
 
                   <i
@@ -1612,13 +1569,11 @@
 
                 </div>
 
-
                 <h3 className="text-base font-bold text-slate-800 text-center mb-2">
 
                   Atenção: proteja seus dados!
 
                 </h3>
-
 
                 <div className="text-[11px] text-slate-600 leading-relaxed space-y-2.5">
 
@@ -1630,7 +1585,6 @@
                     do navegador.
 
                   </p>
-
 
                   <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
 
@@ -1644,7 +1598,6 @@
                       Muito importante:
 
                     </p>
-
 
                     <p className="text-amber-800 mt-1">
 
@@ -1661,7 +1614,6 @@
 
                   </div>
 
-
                   <p>
 
                     Se os dados do site forem apagados,
@@ -1669,7 +1621,6 @@
                     neste dispositivo poderão ser perdidos.
 
                   </p>
-
 
                   <p className="text-slate-500">
 
@@ -1680,7 +1631,6 @@
                   </p>
 
                 </div>
-
 
                 <button
                   onClick={
@@ -1724,7 +1674,6 @@
 
                 </button>
 
-
                 <h3 className="text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
 
                   <i
@@ -1735,7 +1684,6 @@
                   Como Funciona o Método 50-30-20?
 
                 </h3>
-
 
                 <div className="text-[11px] text-slate-600 space-y-3 max-h-80 overflow-y-auto pr-1 custom-scrollbar leading-relaxed">
 
@@ -1749,9 +1697,7 @@
 
                   </p>
 
-
                   <div className="space-y-2">
-
 
                     <div className="bg-blue-50 border border-blue-100 p-2.5 rounded-xl">
 
@@ -1773,7 +1719,6 @@
 
                     </div>
 
-
                     <div className="bg-amber-50 border border-amber-100 p-2.5 rounded-xl">
 
                       <p className="font-bold text-amber-900 text-xs flex items-center gap-1.5">
@@ -1794,18 +1739,17 @@
 
                     </div>
 
+                    <div className="bg-indigo-50 border border-indigo-100 p-2.5 rounded-xl">
 
-                    <div className="bg-emerald-50 border border-emerald-100 p-2.5 rounded-xl">
+                      <p className="font-bold text-indigo-900 text-xs flex items-center gap-1.5">
 
-                      <p className="font-bold text-emerald-900 text-xs flex items-center gap-1.5">
-
-                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
 
                         20% — Futuro e Investimentos
 
                       </p>
 
-                      <p className="text-emerald-700 mt-0.5">
+                      <p className="text-indigo-700 mt-0.5">
 
                         Construção de reserva de emergência,
                         investimentos e planejamento financeiro
@@ -1816,7 +1760,6 @@
                     </div>
 
                   </div>
-
 
                   <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
 
@@ -1846,7 +1789,6 @@
                     </ul>
 
                   </div>
-
 
                   <div className="bg-indigo-50 border border-indigo-100 p-2.5 rounded-xl text-indigo-900">
 
@@ -1882,7 +1824,6 @@
 
                 </div>
 
-
                 <button
                   onClick={() =>
                     setIsMethodModalOpen(false)
@@ -1911,7 +1852,6 @@
 
               <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl">
 
-
                 <div className="flex justify-between items-center mb-5">
 
                   <h3 className="text-base font-bold text-slate-800">
@@ -1921,7 +1861,6 @@
                       : 'Novo Lançamento'}
 
                   </h3>
-
 
                   <button
                     onClick={() =>
@@ -1939,14 +1878,10 @@
 
                 </div>
 
-
                 <form
                   onSubmit={handleSaveTransaction}
                   className="space-y-3.5"
                 >
-
-
-                  {/* TIPO */}
 
                   <div className="flex bg-slate-100 p-1 rounded-xl">
 
@@ -1966,7 +1901,6 @@
 
                     </button>
 
-
                     <button
                       type="button"
                       onClick={() =>
@@ -1974,7 +1908,7 @@
                       }
                       className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${
                         txType === 'income'
-                          ? 'bg-emerald-500 shadow-sm text-white'
+                          ? 'bg-indigo-600 shadow-sm text-white'
                           : 'text-slate-500'
                       }`}
                     >
@@ -1985,9 +1919,6 @@
 
                   </div>
 
-
-                  {/* CATEGORIA */}
-
                   {txType === 'expense' && (
 
                     <div>
@@ -1997,7 +1928,6 @@
                         Bloco (Método 50-30-20)
 
                       </label>
-
 
                       <select
                         value={txCategory}
@@ -2031,9 +1961,6 @@
 
                   )}
 
-
-                  {/* DESCRIÇÃO */}
-
                   <div>
 
                     <label className="block text-xs font-semibold text-slate-600 mb-1">
@@ -2043,7 +1970,6 @@
                         : 'Descrição da Despesa'}
 
                     </label>
-
 
                     <input
                       type="text"
@@ -2065,9 +1991,6 @@
 
                   </div>
 
-
-                  {/* VALOR E DATA */}
-
                   <div className="flex gap-2.5">
 
                     <div className="flex-1">
@@ -2077,7 +2000,6 @@
                         Valor (R$)
 
                       </label>
-
 
                       <input
                         type="number"
@@ -2097,7 +2019,6 @@
 
                     </div>
 
-
                     <div className="flex-1">
 
                       <label className="block text-xs font-semibold text-slate-600 mb-1">
@@ -2105,7 +2026,6 @@
                         Data Inicial
 
                       </label>
-
 
                       <input
                         type="date"
@@ -2124,14 +2044,9 @@
 
                   </div>
 
-
-                  {/* =================================================
-                      NOVO CAMPO: DATA DE QUITAÇÃO
-                  ================================================= */}
-
                   {txType === 'expense' && (
 
-                    <div className="bg-emerald-50/50 border border-emerald-100 rounded-xl p-3">
+                    <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-3">
 
                       <div className="flex items-center justify-between mb-1">
 
@@ -2141,10 +2056,9 @@
 
                         </label>
 
-
                         {txPaymentDate ? (
 
-                          <span className="text-[9px] text-emerald-600 font-semibold flex items-center gap-1">
+                          <span className="text-[9px] text-indigo-600 font-semibold flex items-center gap-1">
 
                             <i
                               data-lucide="check-circle"
@@ -2167,7 +2081,6 @@
 
                       </div>
 
-
                       <input
                         type="date"
                         value={txPaymentDate}
@@ -2177,9 +2090,8 @@
                               e.target.value
                             )
                         }
-                        className="w-full bg-white border border-emerald-200 rounded-xl px-3 py-2 outline-none focus:border-emerald-500 text-xs text-slate-700"
+                        className="w-full bg-white border border-indigo-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-500 text-xs text-slate-700"
                       />
-
 
                       <p className="text-[9px] text-slate-400 mt-1">
 
@@ -2191,9 +2103,6 @@
                     </div>
 
                   )}
-
-
-                  {/* RECORRÊNCIA */}
 
                   <div>
 
@@ -2208,7 +2117,6 @@
                       </span>
 
                     </label>
-
 
                     <select
                       value={txRepeatMonths}
@@ -2252,9 +2160,6 @@
                     </select>
 
                   </div>
-
-
-                  {/* SALVAR */}
 
                   <button
                     type="submit"
@@ -2300,7 +2205,6 @@
 
                 </button>
 
-
                 <h3 className="text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
 
                   <i
@@ -2311,7 +2215,6 @@
                   Termos de Uso e Responsabilidade
 
                 </h3>
-
 
                 <div className="text-[11px] text-slate-600 space-y-2.5 max-h-72 overflow-y-auto pr-1 custom-scrollbar leading-relaxed">
 
@@ -2329,7 +2232,6 @@
 
                   </p>
 
-
                   <p>
 
                     <strong>
@@ -2343,7 +2245,6 @@
                     por meio do armazenamento do navegador.
 
                   </p>
-
 
                   <p>
 
@@ -2360,7 +2261,6 @@
 
                   </p>
 
-
                   <p>
 
                     <strong>
@@ -2375,7 +2275,6 @@
                     do usuário.
 
                   </p>
-
 
                   <p>
 
@@ -2393,7 +2292,6 @@
                   </p>
 
                 </div>
-
 
                 <button
                   onClick={() =>
@@ -2414,7 +2312,7 @@
 
 
           {/* ===================================================
-              MODAL PIX
+              MODAL PIX (APOIE O PROJETO)
           =================================================== */}
 
           {isPixModalOpen && (
@@ -2422,7 +2320,6 @@
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex justify-center items-center p-4">
 
               <div className="bg-white w-full max-w-sm rounded-3xl p-5 shadow-2xl relative text-center">
-
 
                 <button
                   onClick={() =>
@@ -2438,23 +2335,20 @@
 
                 </button>
 
-
-                <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-2.5">
+                <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-2.5">
 
                   <i
                     data-lucide="heart"
-                    className="w-6 h-6 text-emerald-500 fill-emerald-500"
+                    className="w-6 h-6 text-indigo-500 fill-indigo-500"
                   ></i>
 
                 </div>
-
 
                 <h3 className="text-base font-bold text-slate-800 mb-1">
 
                   Apoie o Projeto!
 
                 </h3>
-
 
                 <p className="text-xs text-slate-600 mb-4 leading-relaxed">
 
@@ -2465,7 +2359,6 @@
 
                 </p>
 
-
                 <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80 mb-3">
 
                   <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">
@@ -2473,7 +2366,6 @@
                     Chave Pix (E-mail)
 
                   </p>
-
 
                   <p className="font-mono text-slate-800 text-xs select-all font-semibold bg-white py-1.5 px-2 rounded border border-slate-200">
 
@@ -2483,13 +2375,12 @@
 
                 </div>
 
-
                 <button
-                  onClick={handleCopyPix}
+                  onClick={() => handleCopyPix(false)}
                   className={`w-full font-bold py-2.5 rounded-xl text-xs mb-2 transition-all flex items-center justify-center gap-1.5 border ${
                     copiedPix
-                      ? 'bg-emerald-100 border-emerald-300 text-emerald-700'
-                      : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-700'
+                      ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
+                      : 'bg-indigo-50 hover:bg-indigo-100 border-indigo-200 text-indigo-700'
                   }`}
                 >
 
@@ -2511,7 +2402,6 @@
                   </span>
 
                 </button>
-
 
                 <button
                   onClick={() =>
