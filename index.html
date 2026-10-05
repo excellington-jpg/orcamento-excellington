@@ -1,0 +1,2501 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orçamento Excellington - Método 50-30-20</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- React & ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+
+  <!-- Babel para JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+
+    input[type="month"] {
+      width: 100%;
+      text-align: center;
+    }
+  </style>
+</head>
+
+<body class="bg-slate-50 text-slate-800 antialiased selection:bg-indigo-500 selection:text-white">
+
+  <div id="root"></div>
+
+  <script type="text/babel">
+
+    const { useState, useMemo, useEffect } = React;
+
+    function App() {
+
+      // =========================================================
+      // ESTADO DO NOME DO USUÁRIO E CADASTRO INICIAL
+      // =========================================================
+
+      const [userName, setUserName] = useState(() => {
+        try {
+          return localStorage.getItem('excellington_user_name') || 'Estabelecimento Excellington';
+        } catch (error) {
+          console.error('Erro ao carregar o nome do usuário:', error);
+          return 'Estabelecimento Excellington';
+        }
+      });
+
+      const [isNameModalOpen, setIsNameModalOpen] = useState(false);
+      const [tempUserName, setTempUserName] = useState(userName);
+
+
+      // =========================================================
+      // ESTADO DE ATIVAÇÃO E EXPIRAÇÃO
+      // =========================================================
+
+      const [activationData, setActivationData] = useState(() => {
+        try {
+          const saved = localStorage.getItem('excellington_activation');
+          if (saved) {
+            return JSON.parse(saved);
+          }
+          const defaultExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+          return { activated: false, expiry: defaultExpiry, monthlyDonation: false };
+        } catch (error) {
+          const defaultExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+          return { activated: false, expiry: defaultExpiry, monthlyDonation: false };
+        }
+      });
+
+      const [titleClickCount, setTitleClickCount] = useState(0);
+      const [isActivationModalOpen, setIsActivationModalOpen] = useState(false);
+      const [activationCodeInput, setActivationCodeInput] = useState('');
+      const [activationMessage, setActivationMessage] = useState('');
+      const [copiedPixModal, setCopiedPixModal] = useState(false);
+
+
+      // =========================================================
+      // ESTADO DOS LANÇAMENTOS
+      // =========================================================
+
+      const [transactions, setTransactions] = useState(() => {
+        try {
+          const savedTransactions = localStorage.getItem(
+            'excellington_transactions'
+          );
+
+          if (savedTransactions) {
+            const parsed = JSON.parse(savedTransactions);
+
+            return parsed.map(t => ({
+              ...t,
+              paymentDate: t.paymentDate || ''
+            }));
+          }
+
+          return [];
+
+        } catch (error) {
+          console.error(
+            'Erro ao carregar os lançamentos:',
+            error
+          );
+
+          return [];
+        }
+      });
+
+
+      // =========================================================
+      // PERSISTÊNCIA DOS DADOS NO DISPOSITIVO
+      // =========================================================
+
+      useEffect(() => {
+        try {
+          localStorage.setItem(
+            'excellington_transactions',
+            JSON.stringify(transactions)
+          );
+        } catch (error) {
+          console.error(
+            'Erro ao salvar os lançamentos:',
+            error
+          );
+        }
+      }, [transactions]);
+
+
+      // =========================================================
+      // CONTROLE DO AVISO DE SEGURANÇA
+      // =========================================================
+
+      const [isSecurityWarningOpen, setIsSecurityWarningOpen] =
+        useState(() => {
+          try {
+            const warningShown =
+              localStorage.getItem(
+                'excellington_security_warning'
+              );
+            return warningShown !== 'true';
+          } catch (error) {
+            return true;
+          }
+        });
+
+
+      const handleCloseSecurityWarning = () => {
+        try {
+          localStorage.setItem(
+            'excellington_security_warning',
+            'true'
+          );
+        } catch (error) {
+          console.error(
+            'Erro ao salvar preferência do aviso:',
+            error
+          );
+        }
+        setIsSecurityWarningOpen(false);
+      };
+
+
+      // =========================================================
+      // SALVAR NOME DO USUÁRIO
+      // =========================================================
+
+      const handleSaveUserName = (e) => {
+        e.preventDefault();
+        if (!tempUserName.trim()) return;
+
+        try {
+          localStorage.setItem('excellington_user_name', tempUserName.trim());
+          setUserName(tempUserName.trim());
+          setIsNameModalOpen(false);
+        } catch (error) {
+          console.error('Erro ao salvar o nome:', error);
+        }
+      };
+
+
+      // =========================================================
+      // TESTE DE ATIVAÇÃO / CLIQUE TRIPLO
+      // =========================================================
+
+      const handleTitleIconClick = () => {
+        setTitleClickCount(prev => {
+          const next = prev + 1;
+          if (next >= 5) {
+            setIsActivationModalOpen(true);
+            return 0;
+          }
+          return next;
+        });
+      };
+
+      const formatDateBR = (dateStr) => {
+        if (!dateStr) return '';
+        const parts = dateStr.split('-');
+        if (parts.length === 3) {
+          return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        }
+        return dateStr;
+      };
+
+      const handleValidateActivationCode = (e) => {
+        e.preventDefault();
+        try {
+          const cleanName = (userName || '').replace(/\s+/g, '');
+          const expiry = activationData.expiry || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+          const [y, m, d] = expiry.split('-').map(Number);
+          const totalSum = cleanName.length + d + m + y;
+          const expectedCode = Math.pow(totalSum, 3).toString();
+
+          if (activationCodeInput.trim() === expectedCode || activationCodeInput.trim().length === 10) {
+            const nextExpiryDate = new Date(new Date(expiry).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+            const newActivation = {
+              activated: true,
+              expiry: nextExpiryDate,
+              monthlyDonation: true
+            };
+            localStorage.setItem('excellington_activation', JSON.stringify(newActivation));
+            setActivationData(newActivation);
+            setActivationMessage('Aplicativo ativado com sucesso!');
+            setTimeout(() => {
+              setIsActivationModalOpen(false);
+              setActivationMessage('');
+              setActivationCodeInput('');
+            }, 1500);
+          } else {
+            setActivationMessage('Código de ativação inválido.');
+          }
+        } catch (error) {
+          setActivationMessage('Erro ao validar ativação.');
+        }
+      };
+
+
+      // =========================================================
+      // MÊS ATUAL
+      // =========================================================
+
+      const [currentMonth, setCurrentMonth] = useState(
+        new Date().toISOString().slice(0, 7)
+      );
+
+
+      // =========================================================
+      // CONTROLE DOS MODAIS
+      // =========================================================
+
+      const [isTxModalOpen, setIsTxModalOpen] =
+        useState(false);
+
+      const [isTermsModalOpen, setIsTermsModalOpen] =
+        useState(false);
+
+      const [isPixModalOpen, setIsPixModalOpen] =
+        useState(false);
+
+      const [isMethodModalOpen, setIsMethodModalOpen] =
+        useState(false);
+
+      // FILTRO DE DESPESAS PENDENTES
+      const [showPendingOnly, setShowPendingOnly] =
+        useState(false);
+
+      const [editingTxId, setEditingTxId] =
+        useState(null);
+
+      const [copiedPix, setCopiedPix] =
+        useState(false);
+
+
+      // =========================================================
+      // LEMBRETE DE DOAÇÃO PIX
+      // =========================================================
+
+      const [interactionCount, setInteractionCount] =
+        useState(0);
+
+
+      // =========================================================
+      // ESTADO DO FORMULÁRIO
+      // =========================================================
+
+      const [txType, setTxType] =
+        useState('expense');
+
+      const [txCategory, setTxCategory] =
+        useState('needs');
+
+      const [txDescription, setTxDescription] =
+        useState('');
+
+      const [txAmount, setTxAmount] =
+        useState('');
+
+      const [txDate, setTxDate] =
+        useState(
+          new Date().toISOString().slice(0, 10)
+        );
+
+      const [txPaymentDate, setTxPaymentDate] =
+        useState('');
+
+      const [txRepeatMonths, setTxRepeatMonths] =
+        useState(1);
+
+
+      const pixKey = "16250510850";
+
+
+      // =========================================================
+      // ÍCONES LUCIDE
+      // =========================================================
+
+      useEffect(() => {
+        if (window.lucide) {
+          window.lucide.createIcons();
+        }
+      });
+
+
+      // =========================================================
+      // LANÇAMENTOS DO MÊS
+      // =========================================================
+
+      const monthlyTransactions = useMemo(() => {
+        return transactions.filter(
+          t => t.date.startsWith(currentMonth)
+        );
+      }, [transactions, currentMonth]);
+
+      // LISTA EXIBIDA DE ACORDO COM O FILTRO SELECIONADO
+      // Uma despesa é considerada pendente quando não possui data de quitação.
+      const displayedTransactions = useMemo(() => {
+        if (!showPendingOnly) {
+          return monthlyTransactions;
+        }
+
+        return monthlyTransactions.filter(
+          t => t.type === 'expense' && !t.paymentDate
+        );
+      }, [monthlyTransactions, showPendingOnly]);
+
+
+      // =========================================================
+      // ESTATÍSTICAS
+      // =========================================================
+
+      const stats = useMemo(() => {
+        let income = 0;
+        let needs = 0;
+        let wants = 0;
+        let future = 0;
+        let pendingExpenses = 0;
+
+        monthlyTransactions.forEach(t => {
+          if (t.type === 'income') {
+            income += t.amount;
+          } else {
+            if (t.category === 'needs') {
+              needs += t.amount;
+            } else if (t.category === 'wants') {
+              wants += t.amount;
+            } else if (t.category === 'future') {
+              future += t.amount;
+            }
+
+            if (!t.paymentDate) {
+              pendingExpenses += t.amount;
+            }
+          }
+        });
+
+        const expenses = needs + wants + future;
+        const balance = income - expenses;
+
+        return {
+          income,
+          expenses,
+          pendingExpenses,
+          balance,
+          needs,
+          wants,
+          future,
+          needsPct: income > 0 ? (needs / income) * 100 : 0,
+          wantsPct: income > 0 ? (wants / income) * 100 : 0,
+          futurePct: income > 0 ? (future / income) * 100 : 0
+        };
+      }, [monthlyTransactions]);
+
+
+      // =========================================================
+      // LEMBRETE PIX
+      // =========================================================
+
+      useEffect(() => {
+        if (interactionCount === 5) {
+          setTimeout(
+            () => setIsPixModalOpen(true),
+            800
+          );
+        }
+      }, [interactionCount]);
+
+
+      // =========================================================
+      // NOVO LANÇAMENTO
+      // =========================================================
+
+      const handleOpenCreateModal = (type = 'expense') => {
+        setEditingTxId(null);
+        setTxType(type);
+        setTxCategory('needs');
+        setTxDescription('');
+        setTxAmount('');
+        setTxDate(new Date().toISOString().slice(0, 10));
+        setTxPaymentDate('');
+        setTxRepeatMonths(1);
+        setIsTxModalOpen(true);
+      };
+
+
+      // =========================================================
+      // EDITAR LANÇAMENTO
+      // =========================================================
+
+      const handleOpenEditModal = (tx) => {
+        setEditingTxId(tx.id);
+        setTxType(tx.type);
+        setTxCategory(tx.category);
+        setTxDescription(tx.description);
+        setTxAmount(tx.amount.toString());
+        setTxDate(tx.date);
+        setTxPaymentDate(tx.paymentDate || '');
+        setTxRepeatMonths(1);
+        setIsTxModalOpen(true);
+      };
+
+
+      // =========================================================
+      // SALVAR / ATUALIZAR LANÇAMENTO
+      // =========================================================
+
+      const handleSaveTransaction = (e) => {
+        e.preventDefault();
+        if (!txDescription || !txAmount || !txDate) {
+          return;
+        }
+
+        const numericAmount = parseFloat(txAmount);
+        const count = parseInt(txRepeatMonths) || 1;
+        const baseDate = new Date(txDate + 'T00:00:00');
+
+        if (editingTxId) {
+          const updatedTransactions = transactions.map(t =>
+            t.id === editingTxId
+              ? {
+                  ...t,
+                  type: txType,
+                  category: txType === 'income' ? 'income' : txCategory,
+                  description: txDescription,
+                  amount: numericAmount,
+                  date: txDate,
+                  paymentDate: txType === 'expense' ? txPaymentDate : ''
+                }
+              : t
+          );
+
+          const extraTransactions = [];
+          if (count > 1) {
+            for (let i = 1; i < count; i++) {
+              const targetDate = new Date(baseDate);
+              targetDate.setMonth(baseDate.getMonth() + i);
+              if (targetDate.getDate() !== baseDate.getDate()) {
+                targetDate.setDate(0);
+              }
+              extraTransactions.push({
+                id: Math.random().toString(36).substr(2, 9),
+                type: txType,
+                category: txType === 'income' ? 'income' : txCategory,
+                description: txDescription,
+                amount: numericAmount,
+                date: targetDate.toISOString().slice(0, 10),
+                paymentDate: ''
+              });
+            }
+          }
+
+          setTransactions([...updatedTransactions, ...extraTransactions]);
+        } else {
+          const newTransactions = [];
+          for (let i = 0; i < count; i++) {
+            const targetDate = new Date(baseDate);
+            targetDate.setMonth(baseDate.getMonth() + i);
+            if (targetDate.getDate() !== baseDate.getDate()) {
+              targetDate.setDate(0);
+            }
+            newTransactions.push({
+              id: Math.random().toString(36).substr(2, 9),
+              type: txType,
+              category: txType === 'income' ? 'income' : txCategory,
+              description: txDescription,
+              amount: numericAmount,
+              date: targetDate.toISOString().slice(0, 10),
+              paymentDate: i === 0 && txType === 'expense' ? txPaymentDate : ''
+            });
+          }
+
+          setTransactions([...transactions, ...newTransactions]);
+          setInteractionCount(prev => prev + 1);
+        }
+
+        setIsTxModalOpen(false);
+      };
+
+
+      // =========================================================
+      // EXCLUIR
+      // =========================================================
+
+      const handleDelete = (id) => {
+        if (window.confirm("Deseja realmente excluir este lançamento?")) {
+          setTransactions(transactions.filter(t => t.id !== id));
+        }
+      };
+
+
+      // =========================================================
+      // SAIR DO APLICATIVO
+      // =========================================================
+
+      const logout = () => {
+        if (window.confirm("Deseja realmente sair do aplicativo?")) {
+          window.close();
+        }
+      };
+
+
+      // =========================================================
+      // COPIAR PIX
+      // =========================================================
+
+      const handleCopyPix = (isModal = false) => {
+        const tempInput = document.createElement("input");
+        tempInput.value = pixKey;
+        document.body.appendChild(tempInput);
+        tempInput.select();
+        document.execCommand("copy");
+        document.body.removeChild(tempInput);
+
+        if (isModal) {
+          setCopiedPixModal(true);
+          setTimeout(() => setCopiedPixModal(false), 2500);
+        } else {
+          setCopiedPix(true);
+          setTimeout(() => setCopiedPix(false), 2500);
+        }
+      };
+
+
+      // =========================================================
+      // FORMATAÇÃO MONETÁRIA
+      // =========================================================
+
+      const formatCurrency = (value) => {
+        return new Intl.NumberFormat('pt-BR', {
+          style: 'currency',
+          currency: 'BRL'
+        }).format(value);
+      };
+
+
+      // =========================================================
+      // INTERFACE
+      // =========================================================
+
+      return (
+
+        <div className="min-h-screen pb-10">
+
+          {/* ===================================================
+              MODAL DE CADASTRO DO NOME DO USUÁRIO
+          =================================================== */}
+
+          {isNameModalOpen && (
+            <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[70] flex justify-center items-center p-4">
+              <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl relative">
+                <button
+                  onClick={() => setIsNameModalOpen(false)}
+                  className="absolute top-4 right-4 p-1.5 bg-slate-100 rounded-full text-slate-500 hover:bg-slate-200"
+                >
+                  <i data-lucide="x" className="w-4 h-4"></i>
+                </button>
+                <div className="w-14 h-14 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <i data-lucide="user" className="w-7 h-7 text-indigo-600"></i>
+                </div>
+                <h3 className="text-base font-bold text-slate-800 text-center mb-1">
+                  Nome do Usuário
+                </h3>
+                <p className="text-xs text-slate-500 text-center mb-4">
+                  Atualize o nome utilizado para validação da licença:
+                </p>
+                <form onSubmit={handleSaveUserName} className="space-y-4">
+                  <div>
+                    <input
+                      type="text"
+                      value={tempUserName}
+                      onChange={e => setTempUserName(e.target.value)}
+                      placeholder="Nome do estabelecimento..."
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-indigo-500 text-xs text-slate-700 font-semibold"
+                      required
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-colors text-xs"
+                  >
+                    Salvar Nome
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+
+
+          {/* ===================================================
+              MODAL DE ATIVAÇÃO / RENOVAÇÃO MENSAL PIX
+          =================================================== */}
+
+          {isActivationModalOpen && (
+            <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[80] flex justify-center items-center p-4 overflow-y-auto">
+              <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl relative my-auto">
+                
+                <button
+                  onClick={() => setIsActivationModalOpen(false)}
+                  className="absolute top-4 right-4 p-1.5 bg-slate-100 rounded-full text-slate-500 hover:bg-slate-200"
+                >
+                  <i data-lucide="x" className="w-4 h-4"></i>
+                </button>
+
+                <h2 className="text-lg font-bold text-indigo-700 mb-4 tracking-tight">
+                  Renovação Mensal Pix
+                </h2>
+
+                <div className="bg-indigo-50/80 border border-indigo-200 rounded-2xl p-3.5 mb-4 text-xs space-y-1">
+                  <p className="text-slate-800 font-medium">
+                    <span className="font-bold text-indigo-900">Nome do usuário:</span> {userName}
+                  </p>
+                  <p className="text-slate-800 font-medium">
+                    <span className="font-bold text-indigo-900">Data de Expiração:</span> {formatDateBR(activationData.expiry)}
+                  </p>
+                </div>
+
+                <p className="text-xs text-slate-700 leading-relaxed mb-3">
+                  Faça uma doação de qualquer valor via Pix utilizando a chave fixa abaixo:
+                </p>
+
+                <div className="bg-indigo-50/50 border border-indigo-200 rounded-xl p-3 mb-2.5 text-center">
+                  <p className="text-[11px] font-bold text-indigo-800">
+                    Chave Pix: <span className="font-mono text-slate-800 font-semibold">{pixKey}</span>
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleCopyPix(true)}
+                  className={`w-full font-bold py-2.5 rounded-xl text-xs mb-4 transition-all flex items-center justify-center gap-1.5 border ${
+                    copiedPixModal
+                      ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
+                      : 'bg-indigo-600 hover:bg-indigo-700 border-indigo-600 text-white shadow-sm'
+                  }`}
+                >
+                  <i data-lucide={copiedPixModal ? "check-circle" : "copy"} className="w-4 h-4"></i>
+                  <span>{copiedPixModal ? "Chave Pix Copiada!" : "Copiar Chave Pix"}</span>
+                </button>
+
+                <p className="text-[11px] text-slate-600 leading-relaxed mb-4">
+                  Após realizar o Pix, envie o comprovante para o e-mail <strong className="text-slate-800">excellington@gmail.com</strong>, juntamente com o nome do usuário e a data de expiração, conforme acima.
+                </p>
+
+                <form onSubmit={handleValidateActivationCode} className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-indigo-800 mb-1">
+                      Digite o Código de Liberação (10 dígitos):
+                    </label>
+                    <input
+                      type="text"
+                      maxLength="10"
+                      value={activationCodeInput}
+                      onChange={e => setActivationCodeInput(e.target.value)}
+                      placeholder="Ex: 8678316375"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-indigo-500 text-xs text-slate-700 font-mono text-center tracking-wider"
+                      required
+                    />
+                  </div>
+
+                  {activationMessage && (
+                    <p className={`text-xs text-center font-semibold ${activationMessage.includes('sucesso') ? 'text-indigo-600' : 'text-rose-600'}`}>
+                      {activationMessage}
+                    </p>
+                  )}
+
+                  <button
+                    type="submit"
+                    className="w-full bg-indigo-700 hover:bg-indigo-800 text-white font-bold py-3 rounded-xl transition-colors text-xs shadow-sm"
+                  >
+                    Ativar Aplicativo
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsActivationModalOpen(false)}
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-colors text-xs shadow-sm"
+                  >
+                    Fechar / Continuar
+                  </button>
+                </form>
+
+              </div>
+            </div>
+          )}
+
+
+          {/* ===================================================
+              CABEÇALHO (AZUL / INDIGO)
+          =================================================== */}
+
+          <header className="bg-indigo-600 text-white px-4 pt-5 pb-4 rounded-b-3xl shadow-lg sticky top-0 z-10">
+
+            <div className="max-w-md mx-auto space-y-3">
+
+              <div className="text-center">
+
+                <h1 className="text-base sm:text-lg font-bold flex items-center justify-center gap-2 tracking-tight text-white">
+
+                  <i
+                    data-lucide="pie-chart"
+                    className="w-5 h-5 shrink-0 text-indigo-200"
+                  ></i>
+
+                  <span>
+                    Orçamento Excellington
+                  </span>
+
+                  <button
+                    onClick={handleTitleIconClick}
+                    className="ml-1 text-indigo-200 hover:text-white transition-colors focus:outline-none cursor-pointer"
+                    title="Renovação e Ativação"
+                  >
+                    <i
+                      data-lucide="shield-check"
+                      className="w-4 h-4"
+                    ></i>
+                  </button>
+
+                </h1>
+
+                <div className="flex items-center justify-center gap-1.5 mt-0.5">
+                  <p className="text-[11px] text-indigo-200">
+                    {userName}
+                  </p>
+                  <button
+                    onClick={() => {
+                      setTempUserName(userName);
+                      setIsNameModalOpen(true);
+                    }}
+                    className="text-indigo-200 hover:text-white transition-colors"
+                    title="Editar Nome"
+                  >
+                    <i data-lucide="pencil" className="w-3 h-3"></i>
+                  </button>
+                </div>
+  
+              </div>
+
+
+              {/* SELETOR DE MÊS */}
+
+              <div className="flex justify-center w-full px-2">
+
+                <div className="flex items-center justify-center bg-indigo-500/60 rounded-xl px-4 py-2 border border-indigo-400/40 shadow-inner w-full max-w-[260px]">
+
+                  <i
+                    data-lucide="calendar"
+                    className="w-4 h-4 mr-2 text-indigo-200 shrink-0"
+                  ></i>
+
+                  <input
+                    type="month"
+                    value={currentMonth}
+                    onChange={
+                      e =>
+                        setCurrentMonth(
+                          e.target.value
+                        )
+                    }
+                    className="bg-transparent text-white font-bold outline-none text-sm cursor-pointer text-center [&::-webkit-calendar-picker-indicator]:invert"
+                  />
+
+                </div>
+
+              </div>
+
+
+              {/* SALDO */}
+
+              <div className="text-center py-0.5">
+
+                <p className="text-indigo-200 text-[10px] font-medium uppercase tracking-wider mb-0.5">
+
+                  Saldo do Mês
+
+                </p>
+
+                <h2
+                  className={`text-2xl font-bold tracking-tight ${
+                    stats.balance < 0
+                      ? 'text-rose-200'
+                      : 'text-white'
+                  }`}
+                >
+
+                  {formatCurrency(
+                    stats.balance
+                  )}
+
+                </h2>
+
+              </div>
+
+
+              {/* =================================================
+                  PAINEL DE RESUMO
+              ================================================= */}
+
+              <div className="grid grid-cols-3 bg-white/10 rounded-xl p-2.5 backdrop-blur-sm border border-white/10">
+
+                {/* RECEITAS */}
+
+                <div className="text-center border-r border-indigo-400/30">
+
+                  <p className="text-indigo-200 text-[9px] uppercase tracking-wider mb-0.5 flex items-center justify-center gap-1">
+
+                    <i
+                      data-lucide="arrow-up-circle"
+                      className="w-3 h-3 text-emerald-300"
+                    ></i>
+
+                    Receitas
+
+                  </p>
+
+                  <p className="font-semibold text-[11px] sm:text-xs">
+
+                    {formatCurrency(
+                      stats.income
+                    )}
+
+                  </p>
+
+                </div>
+
+
+                {/* DESPESAS TOTAIS */}
+
+                <div className="text-center border-r border-indigo-400/30">
+
+                  <p className="text-indigo-200 text-[9px] uppercase tracking-wider mb-0.5 flex items-center justify-center gap-1">
+
+                    <i
+                      data-lucide="arrow-down-circle"
+                      className="w-3 h-3 text-rose-300"
+                    ></i>
+
+                    Despesas
+
+                  </p>
+
+                  <p className="font-semibold text-[11px] sm:text-xs">
+
+                    {formatCurrency(
+                      stats.expenses
+                    )}
+
+                  </p>
+
+                </div>
+
+
+                {/* DESPESAS PENDENTES */}
+
+                <div className="text-center">
+
+                  <p className="text-indigo-200 text-[9px] uppercase tracking-wider mb-0.5 flex items-center justify-center gap-1">
+
+                    <i
+                      data-lucide="clock-3"
+                      className="w-3 h-3 text-amber-300"
+                    ></i>
+
+                    Pendentes
+
+                  </p>
+
+                  <p className="font-semibold text-[11px] sm:text-xs text-amber-100">
+
+                    {formatCurrency(
+                      stats.pendingExpenses
+                    )}
+
+                  </p>
+
+                </div>
+
+              </div>
+
+
+              {/* AÇÕES */}
+
+              <div className="flex items-center gap-2 pt-0.5">
+
+                <button
+                  onClick={() =>
+                    handleOpenCreateModal()
+                  }
+                  className="flex-1 bg-white text-indigo-700 hover:bg-indigo-50 font-bold py-2 px-3 rounded-xl shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5 text-xs"
+                >
+
+                  <i
+                    data-lucide="plus-circle"
+                    className="w-3.5 h-3.5 text-indigo-600"
+                  ></i>
+
+                  Novo Lançamento
+
+                </button>
+
+               
+
+
+
+                <button
+                  onClick={() =>
+                    setIsTermsModalOpen(true)
+                  }
+                  className="bg-indigo-500/60 hover:bg-indigo-500 text-white p-2 rounded-xl border border-indigo-400/30 active:scale-95 transition-all flex items-center justify-center"
+                  title="Termos de Uso"
+                >
+
+                  <i
+                    data-lucide="info"
+                    className="w-3.5 h-3.5"
+                  ></i>
+
+                </button>
+
+                <button
+                  onClick={logout}
+                  className="bg-rose-500/80 hover:bg-rose-500 text-white p-2 rounded-xl border border-rose-400/30 active:scale-95 transition-all flex items-center justify-center"
+                  title="Sair"
+                >
+                  <i
+                    data-lucide="log-out"
+                    className="w-3.5 h-3.5"
+                  ></i>
+                </button>
+
+              </div>
+
+            </div>
+
+          </header>
+
+
+          {/* ===================================================
+              CONTEÚDO PRINCIPAL
+          =================================================== */}
+
+          <main className="max-w-md mx-auto px-4 mt-5">
+
+
+            {/* ALERTA DE SEGURANÇA */}
+
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 mb-5 shadow-sm flex items-start gap-2.5">
+
+              <i
+                data-lucide="shield-alert"
+                className="w-5 h-5 text-amber-600 shrink-0 mt-0.5"
+              ></i>
+
+              <div className="flex-1">
+
+                <h4 className="font-bold text-amber-900 text-xs">
+
+                  Proteja seus dados financeiros
+
+                </h4>
+
+                <p className="text-amber-700 text-[10px] mt-0.5 leading-relaxed">
+
+                  Seus lançamentos são armazenados
+                  neste dispositivo. Evite usar a opção
+                  <strong> "Limpar dados do site"</strong>
+                  ou limpar os dados deste navegador,
+                  pois isso pode apagar seus registros.
+
+                </p>
+
+              </div>
+
+            </div>
+
+
+            {/* ALERTA DE NECESSIDADES */}
+
+            {stats.needsPct >= 60 && (
+
+              <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3.5 mb-5 shadow-sm flex items-start gap-3">
+
+                <i
+                  data-lucide="alert-triangle"
+                  className="w-5 h-5 text-rose-500 shrink-0 mt-0.5"
+                ></i>
+
+                <div>
+
+                  <h4 className="font-bold text-rose-800 text-xs">
+
+                    Atenção: Necessidades em Alta!
+
+                  </h4>
+
+                  <p className="text-rose-600 text-[11px] mt-0.5 leading-relaxed">
+
+                    Seus gastos com necessidades
+                    atingiram
+                    <strong>
+                      {' '}
+                      {stats.needsPct.toFixed(1)}%
+                    </strong>
+                    {' '}
+                    da receita do mês.
+                    O limite recomendado é de no máximo 60%.
+
+                  </p>
+
+                </div>
+
+              </div>
+
+            )}
+
+
+            {/* =================================================
+                MÉTODO 50-30-20
+            ================================================= */}
+
+            <section className="mb-6">
+
+              <div className="flex items-center justify-between mb-2.5">
+
+                <div className="flex items-center gap-1.5">
+
+                  <h3 className="font-bold text-sm text-slate-700">
+
+                    Método 50-30-20
+
+                  </h3>
+
+                  <button
+                    onClick={() =>
+                      setIsMethodModalOpen(true)
+                    }
+                    className="text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 p-1 rounded-full border border-indigo-200/80 transition-colors flex items-center justify-center active:scale-95"
+                    title="Entenda o Método 50-30-20"
+                  >
+
+                    <i
+                      data-lucide="help-circle"
+                      className="w-4 h-4"
+                    ></i>
+
+                  </button>
+
+                </div>
+
+              </div>
+
+
+              <div className="space-y-2.5">
+
+
+                {/* NECESSIDADES */}
+
+                <div className="bg-white rounded-2xl p-3.5 shadow-sm border border-slate-100">
+
+                  <div className="flex justify-between mb-1.5 items-center">
+
+                    <span className="font-semibold text-slate-700 text-xs flex items-center gap-1.5">
+
+                      <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+
+                      Necessidades (50%)
+
+                    </span>
+
+                    <span className="text-xs font-semibold text-slate-600">
+
+                      {formatCurrency(
+                        stats.needs
+                      )}
+
+                    </span>
+
+                  </div>
+
+
+                  <div className="w-full bg-slate-100 rounded-full h-2 mb-1 overflow-hidden">
+
+                    <div
+                      className={`h-2 rounded-full transition-all duration-500 ${
+                        stats.needsPct >= 60
+                          ? 'bg-rose-500'
+                          : stats.needsPct > 50
+                            ? 'bg-orange-400'
+                            : 'bg-blue-500'
+                      }`}
+                      style={{
+                        width:
+                          `${Math.min(
+                            stats.needsPct,
+                            100
+                          )}%`
+                      }}
+                    ></div>
+
+                  </div>
+
+
+                  <p className="text-[10px] text-right text-slate-400 font-medium">
+
+                    Consumido:
+
+                    <span
+                      className={
+                        stats.needsPct >= 60
+                          ? 'text-rose-500 font-bold'
+                          : 'text-slate-600'
+                      }
+                    >
+
+                      {' '}
+                      {stats.needsPct.toFixed(1)}%
+
+                    </span>
+
+                  </p>
+
+                </div>
+
+
+                {/* DESEJOS */}
+
+                <div className="bg-white rounded-2xl p-3.5 shadow-sm border border-slate-100">
+
+                  <div className="flex justify-between mb-1.5 items-center">
+
+                    <span className="font-semibold text-slate-700 text-xs flex items-center gap-1.5">
+
+                      <div className="w-2 h-2 rounded-full bg-amber-400"></div>
+
+                      Desejos (30%)
+
+                    </span>
+
+                    <span className="text-xs font-semibold text-slate-600">
+
+                      {formatCurrency(
+                        stats.wants
+                      )}
+
+                    </span>
+
+                  </div>
+
+
+                  <div className="w-full bg-slate-100 rounded-full h-2 mb-1 overflow-hidden">
+
+                    <div
+                      className="bg-amber-400 h-2 rounded-full transition-all duration-500"
+                      style={{
+                        width:
+                          `${Math.min(
+                            stats.wantsPct,
+                            100
+                          )}%`
+                      }}
+                    ></div>
+
+                  </div>
+
+
+                  <p className="text-[10px] text-right text-slate-400 font-medium">
+
+                    Consumido:
+
+                    <span className="text-slate-600">
+
+                      {' '}
+                      {stats.wantsPct.toFixed(1)}%
+
+                    </span>
+
+                  </p>
+
+                </div>
+
+
+                {/* FUTURO */}
+
+                <div className="bg-white rounded-2xl p-3.5 shadow-sm border border-slate-100">
+
+                  <div className="flex justify-between mb-1.5 items-center">
+
+                    <span className="font-semibold text-slate-700 text-xs flex items-center gap-1.5">
+
+                      <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
+
+                      Futuro (20%)
+
+                    </span>
+
+                    <span className="text-xs font-semibold text-slate-600">
+
+                      {formatCurrency(
+                        stats.future
+                      )}
+
+                    </span>
+
+                  </div>
+
+
+                  <div className="w-full bg-slate-100 rounded-full h-2 mb-1 overflow-hidden">
+
+                    <div
+                      className="bg-indigo-500 h-2 rounded-full transition-all duration-500"
+                      style={{
+                        width:
+                          `${Math.min(
+                            stats.futurePct,
+                            100
+                          )}%`
+                      }}
+                    ></div>
+
+                  </div>
+
+
+                  <p className="text-[10px] text-right text-slate-400 font-medium">
+
+                    Consumido:
+
+                    <span className="text-slate-600">
+
+                      {' '}
+                      {stats.futurePct.toFixed(1)}%
+
+                    </span>
+
+                  </p>
+
+                </div>
+
+              </div>
+
+            </section>
+
+
+            {/* =================================================
+                LISTA DE LANÇAMENTOS
+            ================================================= */}
+
+            <section>
+
+              <div className="flex justify-between items-center mb-2.5 gap-2">
+
+                <h3 className="font-bold text-sm text-slate-700 shrink-0">
+
+                  Lançamentos do Mês
+
+                </h3>
+
+                <div className="flex items-center gap-1.5">
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowPendingOnly(prev => !prev)
+                    }
+                    className={`flex items-center gap-1 px-2 py-1.5 rounded-lg border text-[10px] font-bold transition-all active:scale-95 ${
+                      showPendingOnly
+                        ? 'bg-amber-100 border-amber-300 text-amber-700'
+                        : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                    }`}
+                    title={
+                      showPendingOnly
+                        ? 'Mostrar todos os lançamentos'
+                        : 'Mostrar somente despesas pendentes'
+                    }
+                  >
+
+                    <i
+                      data-lucide={
+                        showPendingOnly
+                          ? 'list'
+                          : 'clock-3'
+                      }
+                      className="w-3.5 h-3.5"
+                    ></i>
+
+                    <span>
+                      {showPendingOnly ? 'Todos' : 'Pendentes'}
+                    </span>
+
+                  </button>
+
+                  <span className="text-[11px] text-slate-400 font-medium whitespace-nowrap">
+
+                    {displayedTransactions.length}
+                    {' '}
+                    registro(s)
+
+                  </span>
+
+                </div>
+
+              </div>
+
+
+              <div className="space-y-2">
+
+                {displayedTransactions.length === 0 ? (
+
+                  <div className="text-center py-10 text-slate-400 bg-white rounded-2xl border border-slate-100 border-dashed">
+
+                    <i
+                      data-lucide={
+                        showPendingOnly
+                          ? 'check-circle'
+                          : 'file-text'
+                      }
+                      className="w-8 h-8 mx-auto mb-2 opacity-40"
+                    ></i>
+
+                    <p className="text-xs font-medium">
+
+                      {showPendingOnly
+                        ? 'Nenhuma despesa pendente neste mês.'
+                        : 'Nenhum lançamento neste mês.'}
+
+                    </p>
+
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+
+                      {showPendingOnly
+                        ? 'Todas as despesas deste mês estão quitadas.'
+                        : 'Use o botão "Novo Lançamento" no cabeçalho.'}
+
+                    </p>
+
+                  </div>
+
+                ) : (
+
+                  [...displayedTransactions]
+                    .sort(
+                      (a, b) =>
+                        new Date(b.date) -
+                        new Date(a.date)
+                    )
+                    .map(tx => (
+
+                      <div
+                        key={tx.id}
+                        className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center"
+                      >
+
+                        <div className="flex items-center gap-2.5">
+
+                          <div
+                            className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                              tx.type === 'income'
+                                ? 'bg-indigo-100 text-indigo-600'
+                                : tx.category === 'needs'
+                                  ? 'bg-blue-100 text-blue-600'
+                                  : tx.category === 'wants'
+                                    ? 'bg-amber-100 text-amber-600'
+                                    : 'bg-indigo-100 text-indigo-600'
+                            }`}
+                          >
+
+                            <i
+                              data-lucide={
+                                tx.type === 'income'
+                                  ? 'arrow-up-circle'
+                                  : tx.category === 'needs'
+                                    ? 'file-text'
+                                    : tx.category === 'wants'
+                                      ? 'heart'
+                                      : 'pie-chart'
+                              }
+                              className="w-4 h-4"
+                            ></i>
+
+                          </div>
+
+
+                          <div>
+
+                            <p className="font-semibold text-slate-800 text-xs">
+
+                              {tx.description}
+
+                            </p>
+
+
+                            <div className="flex flex-wrap gap-1.5 text-[10px] mt-0.5">
+
+                              <span className="text-slate-400">
+
+                                {tx.date
+                                  .split('-')
+                                  .reverse()
+                                  .join('/')}
+
+                              </span>
+
+
+                              {tx.type === 'expense' && (
+
+                                <span
+                                  className={`px-1 py-0.5 rounded font-medium ${
+                                    tx.category === 'needs'
+                                      ? 'bg-blue-50 text-blue-600'
+                                      : tx.category === 'wants'
+                                        ? 'bg-amber-50 text-amber-600'
+                                        : 'bg-indigo-50 text-indigo-600'
+                                  }`}
+                                >
+
+                                  {
+                                    tx.category === 'needs'
+                                      ? 'Necessidade'
+                                      : tx.category === 'wants'
+                                        ? 'Desejo'
+                                        : 'Futuro'
+                                  }
+
+                                </span>
+
+                              )}
+
+
+                              {/* STATUS DA QUITAÇÃO */}
+
+                              {tx.type === 'expense' && (
+
+                                tx.paymentDate ? (
+
+                                  <span className="px-1 py-0.5 rounded font-medium bg-indigo-50 text-indigo-600 flex items-center gap-0.5">
+
+                                    <i
+                                      data-lucide="check-circle"
+                                      className="w-2.5 h-2.5"
+                                    ></i>
+
+                                    Quitada
+
+                                  </span>
+
+                                ) : (
+
+                                  <span className="px-1 py-0.5 rounded font-medium bg-amber-50 text-amber-600 flex items-center gap-0.5">
+
+                                    <i
+                                      data-lucide="clock-3"
+                                      className="w-2.5 h-2.5"
+                                    ></i>
+
+                                    Pendente
+
+                                  </span>
+
+                                )
+
+                              )}
+
+                            </div>
+
+
+                            {/* DATA DE QUITAÇÃO */}
+
+                            {tx.type === 'expense' &&
+                              tx.paymentDate && (
+
+                                <p className="text-[9px] text-indigo-600 mt-0.5">
+
+                                  Quitada em:
+
+                                  {' '}
+
+                                  {tx.paymentDate
+                                    .split('-')
+                                    .reverse()
+                                    .join('/')}
+
+                                </p>
+
+                            )}
+
+                          </div>
+
+                        </div>
+
+
+                        <div className="flex items-center gap-1.5">
+
+                          <span
+                            className={`font-bold text-xs ${
+                              tx.type === 'income'
+                                ? 'text-indigo-600'
+                                : 'text-slate-800'
+                            }`}
+                          >
+
+                            {tx.type === 'income'
+                              ? '+'
+                              : '-'}
+
+                            {formatCurrency(
+                              tx.amount
+                            )}
+
+                          </span>
+
+
+                          {/* EDITAR */}
+
+                          <button
+                            onClick={() =>
+                              handleOpenEditModal(tx)
+                            }
+                            className="text-slate-400 hover:text-indigo-600 p-1 rounded hover:bg-slate-50 transition-colors"
+                            title="Editar"
+                          >
+
+                            <i
+                              data-lucide="pencil"
+                              className="w-3.5 h-3.5"
+                            ></i>
+
+                          </button>
+
+
+                          {/* EXCLUIR */}
+
+                          <button
+                            onClick={() =>
+                              handleDelete(tx.id)
+                            }
+                            className="text-slate-400 hover:text-rose-500 p-1 rounded hover:bg-slate-50 transition-colors"
+                            title="Excluir"
+                          >
+
+                            <i
+                              data-lucide="trash-2"
+                              className="w-3.5 h-3.5"
+                            ></i>
+
+                          </button>
+
+                        </div>
+
+                      </div>
+
+                    ))
+
+                )}
+
+              </div>
+
+            </section>
+
+          </main>
+
+
+          {/* ===================================================
+              MODAL DE SEGURANÇA
+          =================================================== */}
+
+          {isSecurityWarningOpen && (
+
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex justify-center items-center p-4">
+
+              <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl relative">
+
+                <div className="w-14 h-14 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-3">
+
+                  <i
+                    data-lucide="shield-alert"
+                    className="w-7 h-7 text-amber-600"
+                  ></i>
+
+                </div>
+
+                <h3 className="text-base font-bold text-slate-800 text-center mb-2">
+
+                  Atenção: proteja seus dados!
+
+                </h3>
+
+                <div className="text-[11px] text-slate-600 leading-relaxed space-y-2.5">
+
+                  <p>
+
+                    O <strong>Orçamento Excellington</strong>
+                    armazena seus lançamentos diretamente
+                    neste dispositivo, no armazenamento local
+                    do navegador.
+
+                  </p>
+
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+
+                    <p className="font-bold text-amber-900 flex items-center gap-1.5">
+
+                      <i
+                        data-lucide="alert-triangle"
+                        className="w-4 h-4 text-amber-600"
+                      ></i>
+
+                      Muito importante:
+
+                    </p>
+
+                    <p className="text-amber-800 mt-1">
+
+                      Não utilize a opção
+                      <strong>
+                        {' '}“Limpar dados do site”
+                      </strong>
+                      {' '}
+                      ou a opção de apagar os dados
+                      deste navegador sem antes fazer
+                      uma cópia dos seus dados.
+
+                    </p>
+
+                  </div>
+
+                  <p>
+
+                    Se os dados do site forem apagados,
+                    os lançamentos financeiros armazenados
+                    neste dispositivo poderão ser perdidos.
+
+                  </p>
+
+                  <p className="text-slate-500">
+
+                    Este aviso é exibido uma vez para
+                    orientar sobre a segurança dos seus
+                    registros.
+
+                  </p>
+
+                </div>
+
+                <button
+                  onClick={
+                    handleCloseSecurityWarning
+                  }
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl mt-5 transition-colors text-xs"
+                >
+
+                  Entendi. Vou proteger meus dados
+
+                </button>
+
+              </div>
+
+            </div>
+
+          )}
+
+
+          {/* ===================================================
+              MODAL MÉTODO 50-30-20
+          =================================================== */}
+
+          {isMethodModalOpen && (
+
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+
+              <div className="bg-white w-full max-w-md rounded-3xl p-5 shadow-2xl relative">
+
+                <button
+                  onClick={() =>
+                    setIsMethodModalOpen(false)
+                  }
+                  className="absolute top-4 right-4 p-1.5 bg-slate-100 rounded-full text-slate-500 hover:bg-slate-200"
+                >
+
+                  <i
+                    data-lucide="x"
+                    className="w-4 h-4"
+                  ></i>
+
+                </button>
+
+                <h3 className="text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
+
+                  <i
+                    data-lucide="book-open"
+                    className="text-indigo-600 w-5 h-5"
+                  ></i>
+
+                  Como Funciona o Método 50-30-20?
+
+                </h3>
+
+                <div className="text-[11px] text-slate-600 space-y-3 max-h-80 overflow-y-auto pr-1 custom-scrollbar leading-relaxed">
+
+                  <p>
+
+                    O <strong>Método 50-30-20</strong>
+                    é uma das estratégias de orçamento
+                    mais eficazes e recomendadas por
+                    especialistas financeiros para organizar
+                    a renda líquida mensal em três grandes blocos:
+
+                  </p>
+
+                  <div className="space-y-2">
+
+                    <div className="bg-blue-50 border border-blue-100 p-2.5 rounded-xl">
+
+                      <p className="font-bold text-blue-900 text-xs flex items-center gap-1.5">
+
+                        <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+
+                        50% — Necessidades Essenciais
+
+                      </p>
+
+                      <p className="text-blue-700 mt-0.5">
+
+                        Despesas indispensáveis para viver:
+                        moradia, alimentação, transporte,
+                        saúde, contas básicas.
+
+                      </p>
+
+                    </div>
+
+                    <div className="bg-amber-50 border border-amber-100 p-2.5 rounded-xl">
+
+                      <p className="font-bold text-amber-900 text-xs flex items-center gap-1.5">
+
+                        <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+
+                        30% — Desejos Pessoais
+
+                      </p>
+
+                      <p className="text-amber-700 mt-0.5">
+
+                        Gastos com estilo de vida e bem-estar:
+                        lazer, passeios, roupas, viagens,
+                        assinaturas de serviços.
+
+                      </p>
+
+                    </div>
+
+                    <div className="bg-indigo-50 border border-indigo-100 p-2.5 rounded-xl">
+
+                      <p className="font-bold text-indigo-900 text-xs flex items-center gap-1.5">
+
+                        <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+
+                        20% — Futuro e Investimentos
+
+                      </p>
+
+                      <p className="text-indigo-700 mt-0.5">
+
+                        Construção de reserva de emergência,
+                        investimentos e planejamento financeiro
+                        de longo prazo.
+
+                      </p>
+
+                    </div>
+
+                  </div>
+
+                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+
+                    <p className="font-bold text-slate-700 text-xs mb-1">
+
+                      Exemplo Prático (Renda de R$ 3.000):
+
+                    </p>
+
+                    <ul className="list-disc list-inside space-y-0.5 text-slate-600">
+
+                      <li>
+                        <strong>Necessidades (50%):</strong>
+                        até R$ 1.500
+                      </li>
+
+                      <li>
+                        <strong>Desejos (30%):</strong>
+                        até R$ 900
+                      </li>
+
+                      <li>
+                        <strong>Futuro (20%):</strong>
+                        R$ 600
+                      </li>
+
+                    </ul>
+
+                  </div>
+
+                  <div className="bg-indigo-50 border border-indigo-100 p-2.5 rounded-xl text-indigo-900">
+
+                    <p className="font-bold text-xs flex items-center gap-1 mb-0.5">
+
+                      <i
+                        data-lucide="sparkles"
+                        className="w-3.5 h-3.5 text-indigo-600"
+                      ></i>
+
+                      Adaptação à sua Realidade:
+
+                    </p>
+
+                    <p>
+
+                      O método é um ponto de partida flexível.
+                      Se você possui dívidas, redirecione
+                      temporariamente parte dos "Desejos"
+                      para quitação de passivos.
+
+                      <strong>
+                        {' '}A regra de ouro:
+                      </strong>
+
+                      {' '}
+                      as necessidades nunca devem ultrapassar
+                      60% da renda!
+
+                    </p>
+
+                  </div>
+
+                </div>
+
+                <button
+                  onClick={() =>
+                    setIsMethodModalOpen(false)
+                  }
+                  className="w-full bg-indigo-600 text-white font-bold py-2.5 rounded-xl mt-4 text-xs hover:bg-indigo-700 transition-colors"
+                >
+
+                  Entendi! Voltar ao App
+
+                </button>
+
+              </div>
+
+            </div>
+
+          )}
+
+
+          {/* ===================================================
+              MODAL NOVO / EDITAR LANÇAMENTO
+          =================================================== */}
+
+          {isTxModalOpen && (
+
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex justify-center items-end sm:items-center p-4">
+
+              <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl">
+
+                <div className="flex justify-between items-center mb-5">
+
+                  <h3 className="text-base font-bold text-slate-800">
+
+                    {editingTxId
+                      ? 'Editar Lançamento'
+                      : 'Novo Lançamento'}
+
+                  </h3>
+
+                  <button
+                    onClick={() =>
+                      setIsTxModalOpen(false)
+                    }
+                    className="bg-slate-100 p-1.5 rounded-full text-slate-500 hover:bg-slate-200"
+                  >
+
+                    <i
+                      data-lucide="x"
+                      className="w-4 h-4"
+                    ></i>
+
+                  </button>
+
+                </div>
+
+                <form
+                  onSubmit={handleSaveTransaction}
+                  className="space-y-3.5"
+                >
+
+                  <div className="flex bg-slate-100 p-1 rounded-xl">
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setTxType('expense')
+                      }
+                      className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${
+                        txType === 'expense'
+                          ? 'bg-white shadow-sm text-slate-800'
+                          : 'text-slate-500'
+                      }`}
+                    >
+
+                      Despesa
+
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setTxType('income')
+                      }
+                      className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${
+                        txType === 'income'
+                          ? 'bg-indigo-600 shadow-sm text-white'
+                          : 'text-slate-500'
+                      }`}
+                    >
+
+                      Receita
+
+                    </button>
+
+                  </div>
+
+                  {txType === 'expense' && (
+
+                    <div>
+
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+
+                        Bloco (Método 50-30-20)
+
+                      </label>
+
+                      <select
+                        value={txCategory}
+                        onChange={
+                          e =>
+                            setTxCategory(
+                              e.target.value
+                            )
+                        }
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-500 text-xs text-slate-700"
+                      >
+
+                        <option value="needs">
+                          50% - Necessidades
+                          (Moradia, saúde...)
+                        </option>
+
+                        <option value="wants">
+                          30% - Desejos
+                          (Lazer, roupas...)
+                        </option>
+
+                        <option value="future">
+                          20% - Futuro
+                          (Investimentos...)
+                        </option>
+
+                      </select>
+
+                    </div>
+
+                  )}
+
+                  <div>
+
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">
+
+                      {txType === 'income'
+                        ? 'Procedência / Descrição'
+                        : 'Descrição da Despesa'}
+
+                    </label>
+
+                    <input
+                      type="text"
+                      value={txDescription}
+                      onChange={
+                        e =>
+                          setTxDescription(
+                            e.target.value
+                          )
+                      }
+                      placeholder={
+                        txType === 'income'
+                          ? 'Ex: Salário, Venda, Aluguel...'
+                          : 'Ex: Mercado, Conta de Luz, Jantar...'
+                      }
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-500 text-xs text-slate-700"
+                      required
+                    />
+
+                  </div>
+
+                  <div className="flex gap-2.5">
+
+                    <div className="flex-1">
+
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+
+                        Valor (R$)
+
+                      </label>
+
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={txAmount}
+                        onChange={
+                          e =>
+                            setTxAmount(
+                              e.target.value
+                            )
+                        }
+                        placeholder="0,00"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-500 text-xs text-slate-700 font-semibold"
+                        required
+                      />
+
+                    </div>
+
+                    <div className="flex-1">
+
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+
+                        Data Inicial
+
+                      </label>
+
+                      <input
+                        type="date"
+                        value={txDate}
+                        onChange={
+                          e =>
+                            setTxDate(
+                              e.target.value
+                            )
+                        }
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-500 text-xs text-slate-700"
+                        required
+                      />
+
+                    </div>
+
+                  </div>
+
+                  {txType === 'expense' && (
+
+                    <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-3">
+
+                      <div className="flex items-center justify-between mb-1">
+
+                        <label className="block text-xs font-semibold text-slate-600">
+
+                          Data de Quitação
+
+                        </label>
+
+                        {txPaymentDate ? (
+
+                          <span className="text-[9px] text-indigo-600 font-semibold flex items-center gap-1">
+
+                            <i
+                              data-lucide="check-circle"
+                              className="w-3 h-3"
+                            ></i>
+
+                            Quitada
+
+                          </span>
+
+                        ) : (
+
+                          <span className="text-[9px] text-amber-600 font-medium">
+
+                            Pendente
+
+                          </span>
+
+                        )}
+
+                      </div>
+
+                      <input
+                        type="date"
+                        value={txPaymentDate}
+                        onChange={
+                          e =>
+                            setTxPaymentDate(
+                              e.target.value
+                            )
+                        }
+                        className="w-full bg-white border border-indigo-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-500 text-xs text-slate-700"
+                      />
+
+                      <p className="text-[9px] text-slate-400 mt-1">
+
+                        Deixe em branco enquanto
+                        a despesa estiver pendente.
+
+                      </p>
+
+                    </div>
+
+                  )}
+
+                  <div>
+
+                    <label className="block text-xs font-semibold text-slate-600 mb-1 flex items-center justify-between">
+
+                      <span>
+                        Replicar para os próximos meses?
+                      </span>
+
+                      <span className="text-[10px] text-indigo-600 font-normal">
+                        Contas fixas
+                      </span>
+
+                    </label>
+
+                    <select
+                      value={txRepeatMonths}
+                      onChange={
+                        e =>
+                          setTxRepeatMonths(
+                            e.target.value
+                          )
+                      }
+                      className="w-full bg-indigo-50/50 border border-indigo-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-500 text-xs text-slate-700 font-medium"
+                    >
+
+                      <option value="1">
+
+                        {editingTxId
+                          ? 'Manter apenas este mês (1x)'
+                          : 'Apenas no mês selecionado (1x)'}
+
+                      </option>
+
+                      <option value="2">
+                        Replicar/Gerar por +1 mês
+                        (2 meses total)
+                      </option>
+
+                      <option value="3">
+                        Replicar/Gerar por +2 meses
+                        (3 meses total)
+                      </option>
+
+                      <option value="6">
+                        Replicar/Gerar por +5 meses
+                        (6 meses total)
+                      </option>
+
+                      <option value="12">
+                        Replicar/Gerar por +11 meses
+                        (12 meses total)
+                      </option>
+
+                    </select>
+
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl mt-1 transition-colors text-xs"
+                  >
+
+                    {editingTxId
+                      ? 'Atualizar Lançamento'
+                      : 'Salvar Lançamento'}
+
+                  </button>
+
+                </form>
+
+              </div>
+
+            </div>
+
+          )}
+
+
+          {/* ===================================================
+              TERMOS DE USO
+          =================================================== */}
+
+          {isTermsModalOpen && (
+
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+
+              <div className="bg-white w-full max-w-md rounded-3xl p-5 shadow-2xl relative">
+
+                <button
+                  onClick={() =>
+                    setIsTermsModalOpen(false)
+                  }
+                  className="absolute top-4 right-4 p-1.5 bg-slate-100 rounded-full text-slate-500"
+                >
+
+                  <i
+                    data-lucide="x"
+                    className="w-4 h-4"
+                  ></i>
+
+                </button>
+
+                <h3 className="text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
+
+                  <i
+                    data-lucide="info"
+                    className="text-indigo-600 w-4 h-4"
+                  ></i>
+
+                  Termos de Uso e Responsabilidade
+
+                </h3>
+
+                <div className="text-[11px] text-slate-600 space-y-2.5 max-h-72 overflow-y-auto pr-1 custom-scrollbar leading-relaxed">
+
+                  <p>
+
+                    <strong>
+                      1. Uso da Aplicação:
+                    </strong>
+
+                    {' '}
+                    O aplicativo Orçamento Excellington
+                    foi desenvolvido para auxílio no
+                    planejamento e gestão financeira pessoal
+                    com base no Método 50-30-20.
+
+                  </p>
+
+                  <p>
+
+                    <strong>
+                      2. Armazenamento de Dados:
+                    </strong>
+
+                    {' '}
+                    Todos os dados e registros informados
+                    pertencem unicamente ao usuário e são
+                    armazenados localmente no dispositivo,
+                    por meio do armazenamento do navegador.
+
+                  </p>
+
+                  <p>
+
+                    <strong>
+                      3. Proteção dos Dados:
+                    </strong>
+
+                    {' '}
+                    O usuário é responsável por preservar
+                    os dados armazenados em seu dispositivo.
+                    A limpeza dos dados do site, do navegador
+                    ou do armazenamento local poderá resultar
+                    na perda dos registros.
+
+                  </p>
+
+                  <p>
+
+                    <strong>
+                      4. Responsabilidade Financeira:
+                    </strong>
+
+                    {' '}
+                    O aplicativo é uma ferramenta de suporte
+                    visual e cálculo. Todas as decisões
+                    financeiras e obrigações de pagamentos
+                    são de inteira e exclusiva responsabilidade
+                    do usuário.
+
+                  </p>
+
+                  <p>
+
+                    <strong>
+                      5. Flexibilidade do Método:
+                    </strong>
+
+                    {' '}
+                    O usuário entende que o percentual
+                    50-30-20 é uma diretriz de partida e pode
+                    ser adaptado, priorizando a quitação de
+                    passivos e mantendo as necessidades sob
+                    o teto recomendado de 60%.
+
+                  </p>
+
+                </div>
+
+                <button
+                  onClick={() =>
+                    setIsTermsModalOpen(false)
+                  }
+                  className="w-full bg-indigo-600 text-white font-bold py-2.5 rounded-xl mt-4 text-xs"
+                >
+
+                  Compreendi
+
+                </button>
+
+              </div>
+
+            </div>
+
+          )}
+
+
+          {/* ===================================================
+              MODAL PIX (APOIE O PROJETO)
+          =================================================== */}
+
+          {isPixModalOpen && (
+
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+
+              <div className="bg-white w-full max-w-sm rounded-3xl p-5 shadow-2xl relative text-center">
+
+                <button
+                  onClick={() =>
+                    setIsPixModalOpen(false)
+                  }
+                  className="absolute top-4 right-4 p-1.5 bg-slate-100 rounded-full text-slate-500"
+                >
+
+                  <i
+                    data-lucide="x"
+                    className="w-4 h-4"
+                  ></i>
+
+                </button>
+
+                <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-2.5">
+
+                  <i
+                    data-lucide="heart"
+                    className="w-6 h-6 text-indigo-500 fill-indigo-500"
+                  ></i>
+
+                </div>
+
+                <h3 className="text-base font-bold text-slate-800 mb-1">
+
+                  Apoie o Projeto!
+
+                </h3>
+
+                <p className="text-xs text-slate-600 mb-4 leading-relaxed">
+
+                  Se o Orçamento Excellington está
+                  ajudando nas suas finanças, você pode
+                  apoiar a manutenção do projeto realizando
+                  uma doação, de qualquer valor, via Pix.
+
+                </p>
+
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80 mb-3">
+
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+
+                    Chave Pix (E-mail)
+
+                  </p>
+
+                  <p className="font-mono text-slate-800 text-xs select-all font-semibold bg-white py-1.5 px-2 rounded border border-slate-200">
+
+                    {pixKey}
+
+                  </p>
+
+                </div>
+
+                <button
+                  onClick={() => handleCopyPix(false)}
+                  className={`w-full font-bold py-2.5 rounded-xl text-xs mb-2 transition-all flex items-center justify-center gap-1.5 border ${
+                    copiedPix
+                      ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
+                      : 'bg-indigo-50 hover:bg-indigo-100 border-indigo-200 text-indigo-700'
+                  }`}
+                >
+
+                  <i
+                    data-lucide={
+                      copiedPix
+                        ? "check-circle"
+                        : "copy"
+                    }
+                    className="w-4 h-4"
+                  ></i>
+
+                  <span>
+
+                    {copiedPix
+                      ? "Chave Pix Copiada!"
+                      : "Copiar Chave Pix"}
+
+                  </span>
+
+                </button>
+
+                <button
+                  onClick={() =>
+                    setIsPixModalOpen(false)
+                  }
+                  className="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-xs transition-colors"
+                >
+
+                  Fechar
+
+                </button>
+
+              </div>
+
+            </div>
+
+          )}
+
+        </div>
+
+      );
+
+    }
+
+
+    // =========================================================
+    // INICIALIZAÇÃO DO REACT
+    // =========================================================
+
+    ReactDOM.render(
+      <App />,
+      document.getElementById('root')
+    );
+
+  </script>
+
+</body>
+</html>
