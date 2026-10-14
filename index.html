@@ -271,24 +271,24 @@
           const cleanName = (userName || '').replace(/\s+/g, '');
           const currentExpiry = activationData.expiry || new Date().toISOString().slice(0, 10);
           
-          // REGRA CORRIGIDA:
-          // - Se a expiração atual ainda é no futuro, usa ela como base (acumula renovação antecipada).
-          // - Se já venceu, usa a data de hoje para iniciar um novo ciclo limpo de 30 dias.
-          const baseTime = new Date(currentExpiry).getTime() > Date.now() 
-            ? new Date(currentExpiry).getTime() 
-            : Date.now();
-            
-          const targetDate = new Date(baseTime + 30 * 24 * 60 * 60 * 1000);
-          const nextExpiryDate = targetDate.toISOString().slice(0, 10);
+          // 1. CORREÇÃO: Extrai o dia, mês e ano estritamente da data de expiração ATUAL exibida na tela
+          const expDateObj = new Date(currentExpiry + 'T00:00:00');
+          const d = expDateObj.getDate();
+          const m = expDateObj.getMonth() + 1;
+          const y = expDateObj.getFullYear();
 
-          // O código esperado é gerado com base na NOVA data de expiração alvo
-          const d = targetDate.getDate();
-          const m = targetDate.getMonth() + 1;
-          const y = targetDate.getFullYear();
           const totalSum = cleanName.length + d + m + y;
           const expectedCode = Math.pow(totalSum, 3).toString();
 
           if (activationCodeInput.trim() === expectedCode || activationCodeInput.trim() === "1234567890") {
+            // 2. Após validar com sucesso, calcula a NOVA data de expiração (acumulando se ainda estiver no futuro ou a partir de hoje se já venceu)
+            const baseTime = new Date(currentExpiry).getTime() > Date.now() 
+              ? new Date(currentExpiry).getTime() 
+              : Date.now();
+              
+            const targetDate = new Date(baseTime + 30 * 24 * 60 * 60 * 1000);
+            const nextExpiryDate = targetDate.toISOString().slice(0, 10);
+
             const newActivation = {
               activated: true,
               expiry: nextExpiryDate,
