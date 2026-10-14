@@ -265,22 +265,30 @@
         return dateStr;
       };
 
-      const handleValidateActivationCode = (e) => {
+            const handleValidateActivationCode = (e) => {
         e.preventDefault();
         try {
           const cleanName = (userName || '').replace(/\s+/g, '');
           const currentExpiry = activationData.expiry || new Date().toISOString().slice(0, 10);
-          const baseDate = new Date(currentExpiry).getTime() > Date.now() ? new Date(currentExpiry) : new Date();
           
-          const [y, m, d] = [baseDate.getFullYear(), baseDate.getMonth() + 1, baseDate.getDate()];
+          // REGRA CORRIGIDA:
+          // - Se a expiração atual ainda é no futuro, usa ela como base (acumula renovação antecipada).
+          // - Se já venceu, usa a data de hoje para iniciar um novo ciclo limpo de 30 dias.
+          const baseTime = new Date(currentExpiry).getTime() > Date.now() 
+            ? new Date(currentExpiry).getTime() 
+            : Date.now();
+            
+          const targetDate = new Date(baseTime + 30 * 24 * 60 * 60 * 1000);
+          const nextExpiryDate = targetDate.toISOString().slice(0, 10);
+
+          // O código esperado é gerado com base na NOVA data de expiração alvo
+          const d = targetDate.getDate();
+          const m = targetDate.getMonth() + 1;
+          const y = targetDate.getFullYear();
           const totalSum = cleanName.length + d + m + y;
           const expectedCode = Math.pow(totalSum, 3).toString();
 
           if (activationCodeInput.trim() === expectedCode || activationCodeInput.trim() === "1234567890") {
-            const targetDate = new Date(baseDate);
-            targetDate.setDate(targetDate.getDate() + 30);
-            const nextExpiryDate = targetDate.toISOString().slice(0, 10);
-
             const newActivation = {
               activated: true,
               expiry: nextExpiryDate,
@@ -302,6 +310,7 @@
           setActivationMessage('Erro ao validar ativação.');
         }
       };
+
 
 
       // =========================================================
